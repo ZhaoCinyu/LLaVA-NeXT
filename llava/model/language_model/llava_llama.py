@@ -59,6 +59,18 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
         # config.rope_scaling = None
 
         self.model = LlavaLlamaModel(config)
+        self.long_method = getattr(config, "long_method", None)
+        if self.long_method:
+            from .long_attention import MsPoEFlashAttention, SelfExtendFlashAttention
+            num_layers = len(self.model.layers)
+            if self.long_method == "mspoe":
+                self.apply_layers = list(range(num_layers))[2:]
+                for layer_idx in self.apply_layers:  # mspoe skip the first two layers
+                    self.model.layers[layer_idx].self_attn = MsPoEFlashAttention(config,layer_idx=layer_idx)
+            else:  #se
+                for layer_idx in list(range(num_layers)):
+                    self.model.layers[layer_idx].self_attn = SelfExtendFlashAttention(config,layer_idx=layer_idx,) 
+                    # SelfExtendAttention(config,layer_idx=layer_idx)
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         # Initialize weights and apply final processing
         self.post_init()

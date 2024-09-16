@@ -53,19 +53,6 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         config.rope_scaling = None
 
         self.model = LlavaQwenModel(config)
-        self.long_method = getattr(config, "long_method", None)
-        if self.long_method:
-            from .long_attention import MsPoEFlashAttention, SelfExtendFlashAttention
-            num_layers = len(self.model.layers)
-            if self.long_method == "mspoe":
-                self.apply_layers = list(range(num_layers))[2:]
-                for layer_idx in self.apply_layers:  # mspoe skip the first two layers
-                    self.model.layers[layer_idx].self_attn = MsPoEFlashAttention(config,layer_idx=layer_idx)
-            else:  #se
-                for layer_idx in list(range(num_layers)):
-                    self.model.layers[layer_idx].self_attn = SelfExtendFlashAttention(config,layer_idx=layer_idx,) 
-                    # SelfExtendAttention(config,layer_idx=layer_idx)
-
         self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
         # Initialize weights and apply final processing
         self.post_init()
@@ -157,10 +144,6 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
             inputs["image_sizes"] = image_sizes
         return inputs
 
-    def _reset_mspoe(self):
-        for layer_idx in self.apply_layers:
-            self.model.layers[layer_idx].self_attn.enable_head_metrics = True
-            self.model.layers[layer_idx].self_attn.head_order = None
 
 AutoConfig.register("llava_qwen", LlavaQwenConfig)
 AutoModelForCausalLM.register(LlavaQwenConfig, LlavaQwenForCausalLM)
