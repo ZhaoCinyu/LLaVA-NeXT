@@ -203,7 +203,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
                 model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
 
-            elif "qwen" in model_name.lower() or "quyen" in model_name.lower():
+            elif "qwen" in model_name.lower() or "quyen" in model_name.lower(): #ss or "onevision" in model_name.lower():
                 tokenizer = AutoTokenizer.from_pretrained(model_path)
                 if "moe" in model_name.lower() or "A14B" in model_name.lower():
                     from llava.model.language_model.llava_qwen_moe import LlavaQwenMoeConfig
@@ -251,6 +251,15 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 except:
                     raise ValueError(f"Model {model_name} not supported")
 
+        # import pdb;pdb.set_trace()
+        if "se" in model_name.lower():
+            import llava.model.SelfExtend as SelfExtend
+        gs = 16
+        ws = 1024
+        SelfExtend.apply(model, group_size=gs, window_size=ws, 
+                            enable_flash_attention=True, flash_attention_impl="flash_attn",
+                            mixture=False)
+        
     else:
         # Load language model
         if model_base is not None:
