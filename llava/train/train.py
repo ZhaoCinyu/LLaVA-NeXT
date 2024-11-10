@@ -1024,11 +1024,20 @@ class LazySupervisedDataset(Dataset):
         else:
             data_args.dataset_paths = [data_path]
             rank0_print(f"Loading {data_path}")
+            # import pdb; pdb.set_trace()
             with open(data_path, "r") as file:
                 cur_data_dict = json.load(file)
-                rank0_print(f"Loaded {len(cur_data_dict)} samples from {data_path}")
                 self.list_data_dict.extend(cur_data_dict)
 
+                # zxy for sharegpt4o starts
+                # cur_data_dict = []
+                # for line in file.readlines():
+                    # cur_data_dict.append(json.loads(line))
+                rank0_print(f"Loaded {len(cur_data_dict)} samples from {data_path}")
+                
+            # self.list_data_dict = cur_data_dict
+            # zxy for sharegpt4o ends
+            
         rank0_print(f"Loaded {len(self.list_data_dict)} samples from {data_path}")
         rank0_print("Formatting inputs...Skip in lazy mode")
         self.tokenizer = tokenizer
