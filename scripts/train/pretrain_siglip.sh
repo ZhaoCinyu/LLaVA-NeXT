@@ -1,6 +1,6 @@
 export HF_HOME='/playpen/xinyu'
-
-LLM_VERSION="Qwen/Qwen2-0.5B-Instruct"
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+LLM_VERSION="Qwen/Qwen2-7B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
 VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
