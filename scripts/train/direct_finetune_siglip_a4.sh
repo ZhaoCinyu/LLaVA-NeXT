@@ -1,5 +1,9 @@
 export HF_HOME='/playpen/xinyu'
 export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export DS_SKIP_CUDA_CHECK=1
+# export NCCL_P2P_DISABLE=1
+export NCCL_DEBUG=INFO
+
 LLM_VERSION="Qwen/Qwen2-0.5B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
 VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
@@ -42,8 +46,8 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --run_name $MID_RUN_NAME \
     --output_dir "/playpen/xinyu/checkpoints/${MID_RUN_NAME}" \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 4 \
-    --per_device_eval_batch_size 4 \
+    --per_device_train_batch_size 2 \
+    --per_device_eval_batch_size 2 \
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
@@ -59,7 +63,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
-    --report_to wandb \
+    --report_to none \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True

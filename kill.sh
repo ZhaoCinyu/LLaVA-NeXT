@@ -1,0 +1,1 @@
+ps -u|grep llava/bin/python|awk '{print $2}'|xargs -I {} sh -c 'kill -9 {}'
