@@ -9,7 +9,8 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 PROMPT_VERSION=plain
 
-BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-diff-attn-pt"
+BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-diff"
+MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-diff-stage2"
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 
 NUM_GPUS=4
@@ -20,16 +21,17 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --deepspeed scripts/zero2.json \
     --model_name_or_path ${LLM_VERSION} \
     --version ${PROMPT_VERSION} \
-    --data_path /playpen/xinyu/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json \
-    --image_folder /playpen/xinyu/LLaVA-Pretrain/images \
+    --data_path /home/xinyuzh/unites1/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json \
+    --image_folder /home/xinyuzh/unites1/LLaVA-Pretrain/images \
     --vision_tower ${VISION_MODEL_VERSION} \
-    --mm_tunable_parts="mm_mlp_adapter,diff_attention" \
+    --pretrain_mm_mlp_adapter="/home/xinyuzh/unites1/checkpoints/projectors/${BASE_RUN_NAME}/mm_projector.bin" \
+    --mm_tunable_parts="diff_attention" \
     --mm_vision_select_layer -2 \
     --mm_projector_type mlp2x_gelu \
     --mm_use_im_start_end False \
     --mm_use_im_patch_token False \
     --bf16 True \
-    --output_dir /playpen/xinyu/checkpoints/projectors/${BASE_RUN_NAME} \
+    --output_dir /playpen/xinyu/checkpoints/${MID_RUN_NAME} \
     --num_train_epochs 1 \
     --per_device_train_batch_size 16 \
     --per_device_eval_batch_size 4 \

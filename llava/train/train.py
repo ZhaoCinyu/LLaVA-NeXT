@@ -32,7 +32,7 @@ import yaml
 import math
 import re
 import torch
-
+import torch.distributed as dist
 import transformers
 import tokenizers
 import deepspeed
@@ -1670,6 +1670,15 @@ def train(attn_implementation=None):
                 for name, param in model.named_parameters():
                     if "vision_tower" not in name and "mm_projector" not in name and "vision_resampler" not in name:
                         param.requires_grad_(True)
+            if "diff_attention" in tunable_parts:
+                for name, param in model.named_parameters():
+                    if "vision_tower" not in name and "mm_projector" not in name and "vision_resampler" not in name:
+                        if "self_attn" in name:
+                            param.requires_grad_(True)
+        
+        # if dist.get_rank() == 0:
+        #     import pdb;pdb.set_trace()
+        # dist.barrier()
 
         total_params = sum(p.ds_numel if hasattr(p, "ds_numel") else p.numel() for p in model.parameters())
         trainable_params = sum(p.ds_numel if hasattr(p, "ds_numel") else p.numel() for p in model.parameters() if p.requires_grad)

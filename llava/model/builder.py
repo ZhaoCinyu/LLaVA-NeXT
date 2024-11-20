@@ -250,15 +250,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
                 except:
                     raise ValueError(f"Model {model_name} not supported")
-
-        # import pdb;pdb.set_trace()
-        if "se" in model_name.lower():
-            import llava.model.SelfExtend as SelfExtend
-            gs = 2
-            ws = 256
-            SelfExtend.apply(model, group_size=gs, window_size=ws, 
-                                enable_flash_attention=True, flash_attention_impl="flash_attn",
-                                mixture=False)
         
     else:
         # Load language model
