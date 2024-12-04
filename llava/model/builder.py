@@ -231,6 +231,10 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=False)
                 cfg_pretrained = AutoConfig.from_pretrained(model_path)
                 model = LlavaGemmaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, config=cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
+            elif "pythia" in model_name.lower():
+                tokenizer = AutoTokenizer.from_pretrained(model_path, use_fast=True)
+                cfg_pretrained = AutoConfig.from_pretrained(model_path)
+                model = LlavaPythiaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, config=cfg_pretrained, attn_implementation=attn_implementation, **kwargs)
             else:
                 try:
                     from llava.model.language_model.llava_llama import LlavaConfig
@@ -250,7 +254,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
                 except:
                     raise ValueError(f"Model {model_name} not supported")
-        
+            
     else:
         # Load language model
         if model_base is not None:

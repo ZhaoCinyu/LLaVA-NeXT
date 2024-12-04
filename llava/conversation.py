@@ -20,6 +20,7 @@ class SeparatorStyle(Enum):
     LLAMA_3 = auto()
     QWEN = auto()
     GEMMA = auto()
+    PYTHIA = auto()
 
 
 @dataclasses.dataclass
@@ -71,7 +72,7 @@ class Conversation:
                 else:
                     ret += role + ":"
 
-        elif self.sep_style == SeparatorStyle.TWO:
+        elif self.sep_style == SeparatorStyle.TWO or self.sep_style == SeparatorStyle.PYTHIA:
             seps = [self.sep, self.sep2]
             ret = self.system + seps[0]
             for i, (role, message) in enumerate(messages):
@@ -453,6 +454,18 @@ You are a helpful assistant.""",
 
 conv_gemma_instruct = Conversation(system="", roles=("<start_of_turn>user\n", "<start_of_turn>model\n"), version="gemma", messages=[], offset=0, sep_style=SeparatorStyle.GEMMA, sep="<end_of_turn>\n")
 
+conv_pythia = Conversation(
+    # system="You are a helpful language and vision assistant. ", 
+    # roles=("USER", "ASSISTANT"), 
+    system="You are a helpful language and vision assistant. ",
+    roles=("USER", "ASSISTANT"),
+    version="pythia", 
+    messages=[], 
+    offset=0, 
+    sep_style=SeparatorStyle.PYTHIA, 
+    sep="###",
+    sep2="<|endoftext|>")
+
 conv_llava_plain = Conversation(
     system="",
     roles=("", ""),
@@ -578,6 +591,7 @@ conv_templates = {
     "qwen_1_5": conv_qwen,
     "qwen_2": conv_qwen,
     "gemma_instruct": conv_gemma_instruct,
+    "pythia": conv_pythia,
 }
 
 

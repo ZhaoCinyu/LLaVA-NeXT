@@ -584,6 +584,8 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
 
     # Apply prompt templates
     input_ids, targets = [], []
+    print('sources',len(sources))
+    print('sources',sources)
     for i, source in enumerate(sources):
         if roles[source[0]["from"]] != roles["human"]:
             source = source[1:]
@@ -614,7 +616,8 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
             else:
                 target += encode_id
         
-
+        print("target" ,target)
+        print("input_ids", input_ids)
                     
         assert len(input_id) == len(target), f"{len(input_id)} != {len(target)}"
         for idx, encode_id in enumerate(input_id):
@@ -756,12 +759,16 @@ def preprocess_v1(sources, tokenizer: transformers.PreTrainedTokenizer, has_imag
 
     # Mask targets
     sep = conv.sep + conv.roles[1] + ": "
+    # print('conversations',len(conversations))
+    print('conversations',conversations)
+    print("target copied" ,targets)
     for conversation, target in zip(conversations, targets):
         total_len = int(target.ne(tokenizer.pad_token_id).sum())
 
         rounds = conversation.split(conv.sep2)
         cur_len = 1
         target[:cur_len] = IGNORE_INDEX
+        print("target init" ,target)
         for i, rou in enumerate(rounds):
             if rou == "":
                 break
@@ -781,12 +788,14 @@ def preprocess_v1(sources, tokenizer: transformers.PreTrainedTokenizer, has_imag
             if i != 0 and not tokenizer.legacy and IS_TOKENIZER_GREATER_THAN_0_14:
                 round_len -= 1
                 instruction_len -= 1
-
+            print(f"target {i}" ,target)
             target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
 
             cur_len += round_len
         target[cur_len:] = IGNORE_INDEX
-
+        print("target final" ,target)
+        # print("input_ids", input_ids)
+        exit(-1)
         if cur_len < tokenizer.model_max_length:
             if cur_len != total_len:
                 target[:] = IGNORE_INDEX
@@ -797,6 +806,89 @@ def preprocess_v1(sources, tokenizer: transformers.PreTrainedTokenizer, has_imag
         labels=targets,
     )
 
+def preprocess_pythia(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False) -> Dict:
+    conv = conversation_lib.default_conversation.copy()
+    roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
+
+    # Apply prompt templates
+    conversations = []
+    for i, source in enumerate(sources):
+        if roles[source[0]["from"]] != conv.roles[0]:
+            # Skip the first one if it is not from human
+            source = source[1:]
+        conv.messages = []
+        for j, sentence in enumerate(source):
+            role = roles[sentence["from"]]
+            assert role == conv.roles[j % 2], f"{i}"
+            conv.append_message(role, sentence["value"])
+        
+        conversations.append(conv.get_prompt())
+    # print('conversations',len(conversations))
+    # print(conversations)
+    # Tokenize conversations
+
+    if has_image:
+        input_ids = torch.stack([tokenizer_image_token(prompt, tokenizer, return_tensors="pt") for prompt in conversations], dim=0)
+    else:
+        input_ids = tokenizer(
+            conversations,
+            return_tensors="pt",
+            padding="longest",
+            max_length=tokenizer.model_max_length,
+            truncation=True,
+        ).input_ids
+
+    targets = input_ids.clone()
+    assert conv.sep_style == conversation_lib.SeparatorStyle.PYTHIA
+
+    # Mask targets
+    sep = conv.sep + conv.roles[1] + ": "
+    # print('targets copied',len(targets))
+    # print(targets)
+    for conversation, target in zip(conversations, targets):
+        total_len = int(target.sum())
+        rounds = conversation.split(conv.sep2)
+        # re_rounds = [conv.sep.join(rounds[:3])]  # system + user + gpt
+        # for conv_idx in range(3, len(rounds), 2):
+        #     re_rounds.append(conv.sep.join(rounds[conv_idx : conv_idx + 2]))  # user + gpt
+        cur_len = 1
+        target[:cur_len] = IGNORE_INDEX
+
+        # print(rounds)
+        for i, rou in enumerate(rounds):
+            if rou == "":
+                break
+
+            parts = rou.split(sep)
+            # print(parts)
+            if len(parts) != 2:
+                break
+            parts[0] += sep
+
+            if has_image:
+                round_len = len(tokenizer_image_token(rou, tokenizer))
+                instruction_len = len(tokenizer_image_token(parts[0], tokenizer)) - 2
+            else:
+                round_len = len(tokenizer(rou).input_ids)
+                instruction_len = len(tokenizer(parts[0]).input_ids) - 2
+
+            target[cur_len : cur_len + instruction_len] = IGNORE_INDEX
+            # print(f"target {i}" ,target)
+            # if i == 2:
+                # exit(-1)
+            cur_len += round_len
+        target[cur_len:] = IGNORE_INDEX
+        # print("target final" ,target)
+        # exit(-1)
+        # if cur_len < tokenizer.model_max_length:
+        #     if cur_len != total_len:
+        #         target[:] = IGNORE_INDEX
+        #         print(f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}." f"(#turns={len(rounds)} ignored)")
+
+    return dict(
+        input_ids=input_ids,
+        labels=targets,
+    )
 
 def preprocess_mpt(sources, tokenizer: transformers.PreTrainedTokenizer, has_image: bool = False) -> Dict:
     conv = conversation_lib.default_conversation.copy()
@@ -923,6 +1015,8 @@ def preprocess(sources: Sequence[str], tokenizer: transformers.PreTrainedTokeniz
         return preprocess_gemma(sources, tokenizer, has_image=has_image)
     if conversation_lib.default_conversation.version == "llama_v3":
         return preprocess_llama3(sources, tokenizer, has_image=has_image)
+    if conversation_lib.default_conversation.version == "pythia":
+        return preprocess_pythia(sources, tokenizer, has_image=has_image)
     # add end signal and concatenate together
     conversations = []
     for source in sources:
@@ -1441,6 +1535,15 @@ def get_model(model_args, training_args, bnb_model_from_pretrained_args):
                 low_cpu_mem_usage=False,
                 **customized_kwargs,
             )
+        elif "pythia" in model_args.model_name_or_path.lower():
+            model = LlavaPythiaForCausalLM.from_pretrained(
+                model_args.model_name_or_path,
+                cache_dir=training_args.cache_dir,
+                attn_implementation=training_args.attn_implementation,
+                torch_dtype=(torch.bfloat16 if training_args.bf16 else None),
+                low_cpu_mem_usage=False,
+                **customized_kwargs,
+            )
         else:
             raise ValueError(f"Unknown model class {model_args}")
     else:
@@ -1557,6 +1660,13 @@ def train(attn_implementation=None):
             padding_side="right",
             use_fast=False,
         )
+    elif "pythia" in model_args.model_name_or_path.lower():
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path, 
+            cache_dir=training_args.cache_dir, 
+            model_max_length=training_args.model_max_length, 
+            padding_side="left",
+            use_fast=True,)
 
     rank0_print(f"Prompt version: {model_args.version}")
     if model_args.version == "v0":
@@ -1710,6 +1820,12 @@ def train(attn_implementation=None):
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
     trainer = LLaVATrainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+
+    # if torch.distributed.get_rank() == 0:
+        # import pdb;pdb.set_trace()
+    # torch.distributed.barrier()
+    # safe_save_model_for_hf_trainer(trainer=trainer, output_dir='/playpen/xinyu/checkpoints/test_projector/original')
+    # exit(-1)
 
     if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
         trainer.train(resume_from_checkpoint=True)

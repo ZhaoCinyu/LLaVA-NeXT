@@ -1,5 +1,5 @@
 export HF_HOME='/playpen/xinyu'
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 export DS_SKIP_CUDA_CHECK=1
 # export NCCL_P2P_DISABLE=1
 export NCCL_DEBUG=INFO
@@ -13,24 +13,23 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 PROMPT_VERSION="qwen_1_5"
 
-BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-diff"
-MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-diff"
+BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-diff" #-attn-pt"
+MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-test" #-attn-pt"
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
 
 CKPT_PATH=$LLM_VERSION # this could also be the previous stage checkpoint
 
-NUM_GPUS=8
+NUM_GPUS=2
 NNODES=1
 PORT=12345
 ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NNODES}" --master_port="${PORT}" \
     llava/train/train_mem.py \
     --deepspeed scripts/zero2.json \
-    --model_name_or_path ${CKPT_PATH} \
+    --model_name_or_path="/playpen/xinyu/checkpoints/projectors/${BASE_RUN_NAME}" \
     --version ${PROMPT_VERSION} \
     --data_path="/playpen/xinyu/LLaVA-Instruct-150K/llava_v1_5_mix665k.json" \
     --image_folder "/playpen/xinyu/LLaVA-Instruct-150K/images" \
-    --pretrain_mm_mlp_adapter="/playpen/xinyu/checkpoints/projectors/${BASE_RUN_NAME}/mm_projector.bin" \
     --mm_tunable_parts="mm_vision_tower,mm_mlp_adapter,mm_language_model" \
     --mm_vision_tower_lr=2e-6 \
     --vision_tower ${VISION_MODEL_VERSION} \
@@ -63,7 +62,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --gradient_checkpointing True \
     --dataloader_num_workers 4 \
     --lazy_preprocess True \
-    --report_to wandb \
+    --report_to none \
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True
