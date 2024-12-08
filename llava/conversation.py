@@ -73,7 +73,7 @@ class Conversation:
                 else:
                     ret += role + ":"
 
-        elif self.sep_style == SeparatorStyle.TWO or self.sep_style == SeparatorStyle.PYTHIA or self.sep_style == SeparatorStyle.SMOLLM:
+        elif self.sep_style == SeparatorStyle.TWO or self.sep_style == SeparatorStyle.PYTHIA:
             seps = [self.sep, self.sep2]
             ret = self.system + seps[0]
             for i, (role, message) in enumerate(messages):
@@ -84,7 +84,7 @@ class Conversation:
                 else:
                     ret += role + ":"
 
-        elif self.sep_style == SeparatorStyle.CHATML:
+        elif self.sep_style == SeparatorStyle.CHATML or self.sep_style == SeparatorStyle.SMOLLM:
             ret = "" if self.system == "" else self.system + self.sep + "\n"
             for role, message in messages:
                 if message:
@@ -453,6 +453,15 @@ You are a helpful assistant.""",
     sep="<|im_end|>",
 )
 
+conv_smollm = Conversation(
+    system="You are a helpful language and vision assistant. ",
+    roles=("<|im_start|>user", "<|im_start|>assistant"),
+    version="smollm", 
+    messages=[], 
+    offset=0, 
+    sep_style=SeparatorStyle.SMOLLM, 
+    sep="<|im_end|>")
+
 conv_gemma_instruct = Conversation(system="", roles=("<start_of_turn>user\n", "<start_of_turn>model\n"), version="gemma", messages=[], offset=0, sep_style=SeparatorStyle.GEMMA, sep="<end_of_turn>\n")
 
 conv_pythia = Conversation(
@@ -466,18 +475,6 @@ conv_pythia = Conversation(
     sep_style=SeparatorStyle.PYTHIA, 
     sep="###",
     sep2="<|endoftext|>")
-
-conv_smollm = Conversation(
-    # system="You are a helpful language and vision assistant. ", 
-    # roles=("USER", "ASSISTANT"), 
-    system="You are a helpful language and vision assistant. ",
-    roles=("USER", "ASSISTANT"),
-    version="smollm", 
-    messages=[], 
-    offset=0, 
-    sep_style=SeparatorStyle.SMOLLM, 
-    sep="###",
-    sep2="<|im_end|>")
 
 conv_llava_plain = Conversation(
     system="",
