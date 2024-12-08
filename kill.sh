@@ -1,1 +1,2 @@
 ps -ef|grep /home/xinyuzh/anaconda3/bin/python|awk '{print $2}'|xargs -I {} sh -c 'kill -9 {}'
+ps -ef|grep /home/xinyuzh/anaconda3/envs/llava2/bin/python|awk '{print $2}'|xargs -I {} sh -c 'kill -9 {}'
