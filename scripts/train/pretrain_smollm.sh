@@ -2,13 +2,23 @@ REPORT_TO=${1:-"none"}
 BATCH_PROCESSOR_SIZE=${2:-"16"}
 
 export HF_HOME='/playpen/xinyu'
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=4,5,6,7
 
 # LLM_VERSION="EleutherAI/pythia-70m"
 # LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
-LLM_VERSION="HuggingFaceTB/SmolLM2-360M-Instruct"
+LLM_VERSION="HuggingFaceTB/SmolLM2-135M-Instruct"
+# LLM_VERSION="HuggingFaceTB/SmolLM2-360M-Instruct"
+# LLM_VERSION="HuggingFaceTB/SmolLM2-1.7B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+# VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
+if [[ $VISION_MODEL_VERSION == *"clip"* ]]; then
+    LR=2e-3 
+else
+    LR=1e-3
+fi
+ # for siglip
+# LR=2e-3 # for clip
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 # DATA_PREFIX='/home/xinyuzh/unites1'
 DATA_PREFIX='/playpen/xinyu'
@@ -19,7 +29,7 @@ PROMPT_VERSION=plain
 BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-clip"
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 
-NUM_GPUS=8
+NUM_GPUS=4
 NNODES=1
 PORT=29500
 
@@ -46,13 +56,13 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --evaluation_strategy "no" \
     --save_strategy "no" \
     --save_steps 50000 \
-    --learning_rate 2e-3 \
+    --learning_rate $LR \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 2048 \
+    --model_max_length 8192 \
     --gradient_checkpointing True \
     --dataloader_num_workers $BATCH_PROCESSOR_SIZE \
     --lazy_preprocess True \

@@ -13,6 +13,14 @@ export NCCL_DEBUG=INFO
 LLM_VERSION="HuggingFaceTB/SmolLM2-360M-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
 VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+# VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
+if [[ $VISION_MODEL_VERSION == *"clip"* ]]; then
+    LR=2e-5 
+    $BATCH_PROCESSOR_SIZE=16
+else
+    LR=1e-5
+    $BATCH_PROCESSOR_SIZE=4
+fi
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 # DATA_PREFIX='/playpen/xinyu'
 DATA_PREFIX='/home/xinyuzh/unites1'
@@ -55,13 +63,13 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port=
     --save_strategy "steps" \
     --save_steps 2000 \
     --save_total_limit 1 \
-    --learning_rate 2e-5 \
+    --learning_rate $LR \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \
     --logging_steps 1 \
     --tf32 True \
-    --model_max_length 2048 \
+    --model_max_length 8192 \
     --gradient_checkpointing True \
     --dataloader_num_workers $BATCH_PROCESSOR_SIZE \
     --lazy_preprocess True \
