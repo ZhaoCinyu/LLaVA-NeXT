@@ -185,6 +185,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 or "nous-hermes" in model_name.lower()
                 or "llava-v1.6-34b" in model_name.lower()
                 or "llava-v1.5" in model_name.lower()
+                or "smollm" in model_name.lower()
             ):
                 from llava.model.language_model.llava_llama import LlavaConfig
 
