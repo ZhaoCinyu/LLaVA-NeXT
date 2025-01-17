@@ -22,7 +22,8 @@ import torch
 from llava.model import *
 from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from llava.utils import rank0_print
-
+CALIBRATION = int(os.environ.get("CALIBRATION", 0))
+EVALUATION = int(os.environ.get("EVALUATION", 0))
 
 def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", torch_dtype="float16",attn_implementation="flash_attention_2", customized_config=None, overwrite_config=None, **kwargs):
     kwargs["device_map"] = device_map
@@ -201,7 +202,15 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                     rank0_print(f"Overwriting config with {overwrite_config}")
                     for k, v in overwrite_config.items():
                         setattr(llava_cfg, k, v)
+                from .language_model.modelling_llama import LlamaAttention
+                from .language_model.llama_modelling_aug import atten_aug_forward_cal_llama, atten_aug_forward_eval_llama
 
+                assert not (CALIBRATION and EVALUATION)
+                if CALIBRATION:
+                    LlamaAttention.forward = atten_aug_forward_cal_llama
+                if EVALUATION:
+                    LlamaAttention.forward = atten_aug_forward_eval_llama
+               
                 model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
 
             elif "qwen" in model_name.lower() or "quyen" in model_name.lower(): #ss or "onevision" in model_name.lower():
@@ -219,6 +228,15 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
 
                 else:
                     from llava.model.language_model.llava_qwen import LlavaQwenConfig
+                    from .language_model.modelling_qwen import Qwen2Attention
+                    from .language_model.qwen_modelling_aug import atten_aug_forward_cal_qwen, atten_aug_forward_eval_qwen
+
+                    assert not (CALIBRATION and EVALUATION)
+                    if CALIBRATION:
+                        Qwen2Attention.forward = atten_aug_forward_cal_qwen
+                    if EVALUATION:
+                        Qwen2Attention.forward = atten_aug_forward_eval_qwen
+                
                     if overwrite_config is not None:
                         llava_cfg = LlavaQwenConfig.from_pretrained(model_path)
                         rank0_print(f"Overwriting config with {overwrite_config}")

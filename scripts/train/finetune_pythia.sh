@@ -1,13 +1,21 @@
 export HF_HOME='/playpen/xinyu'
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1 
 export DS_SKIP_CUDA_CHECK=1
 # export NCCL_P2P_DISABLE=1
 export NCCL_DEBUG=INFO
 
 # LLM_VERSION="EleutherAI/pythia-70m"
-LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
+LLM_VERSION='/home/xinyuzh/unites1/pythia_20k/pythia-70m-diff-20k-hf'
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+# VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
+if [[ $VISION_MODEL_VERSION == *"clip"* ]]; then
+    LR=2e-5 
+    # $BATCH_PROCESSOR_SIZE=16
+else
+    LR=1e-5
+    # $BATCH_PROCESSOR_SIZE=4
+fi
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 ############### Pretrain ################
@@ -15,22 +23,22 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 PROMPT_VERSION="pythia"
 
 BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-clip" #-attn-pt"
-MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-clip-vision" #-attn-pt"
+MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-textvqa" #-attn-pt"
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
 
 CKPT_PATH=$LLM_VERSION # this could also be the previous stage checkpoint
 
-NUM_GPUS=4
+NUM_GPUS=2
 NNODES=1
-PORT=29500
+PORT=29512
 ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port="${PORT}" \
     llava/train/train_mem.py \
     --deepspeed scripts/zero2.json \
     --model_name_or_path $LLM_VERSION \
     --version $PROMPT_VERSION \
-    --data_path /playpen/xinyu/LLaVA-Instruct-150K/llava_v1_5_mix665k.json \
-    --image_folder /playpen/xinyu/LLaVA-Instruct-150K/images \
+    --data_path /home/xinyuzh/unites1/LLaVA-Instruct-150K/textvqa.json \
+    --image_folder /home/xinyuzh/unites1/LLaVA-Instruct-150K/images \
     --pretrain_mm_mlp_adapter /playpen/xinyu/checkpoints/projectors/$BASE_RUN_NAME/mm_projector.bin \
     --mm_tunable_parts "mm_vision_tower,mm_mlp_adapter,mm_language_model" \
     --mm_vision_tower_lr=2e-6 \
@@ -49,7 +57,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port=
     --save_strategy "steps" \
     --save_steps 2000 \
     --save_total_limit 1 \
-    --learning_rate 2e-5 \
+    --learning_rate $LR \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \

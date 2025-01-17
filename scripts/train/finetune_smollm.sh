@@ -2,40 +2,46 @@ REPORT_TO=${1:-"none"}
 BATCH_PROCESSOR_SIZE=${2:-"16"}
 
 export HF_HOME='/playpen/xinyu'
-export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export CUDA_VISIBLE_DEVICES=3,4,6,7
 export DS_SKIP_CUDA_CHECK=1
 # export NCCL_P2P_DISABLE=1
 export NCCL_DEBUG=INFO
 
-# LLM_VERSION="EleutherAI/pythia-70m"
-# LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
-# LLM_VERSION="HuggingFaceTB/SmolLM2-135M-Instruct"
-LLM_VERSION="HuggingFaceTB/SmolLM2-360M-Instruct"
-LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
-# VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
-if [[ $VISION_MODEL_VERSION == *"clip"* ]]; then
-    LR=2e-5 
-    $BATCH_PROCESSOR_SIZE=16
-else
-    LR=1e-5
-    $BATCH_PROCESSOR_SIZE=4
-fi
-VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 # DATA_PREFIX='/playpen/xinyu'
 DATA_PREFIX='/home/xinyuzh/unites1'
+
+# LLM_VERSION="EleutherAI/pythia-70m"
+# LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
+LLM_VERSION="HuggingFaceTB/SmolLM2-135M-Instruct"
+# LLM_VERSION="HuggingFaceTB/SmolLM2-360M-Instruct"
+# LLM_VERSION="${DATA_PREFIX}/checkpoints/sft_smollm_base_v2"
+
+LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
+# VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
+if [[ $VISION_MODEL_VERSION == *"clip"* ]]; then
+    LR=2e-5 
+    # $BATCH_PROCESSOR_SIZE=16
+else
+    LR=1e-5
+    # $BATCH_PROCESSOR_SIZE=4
+fi
+VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
+
 ############### Pretrain ################
 
 PROMPT_VERSION="smollm"
 
 BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-clip" #-attn-pt"
-MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-clip-vision" #-attn-pt"
+BASE_RUN_NAME_U1="llavanext-google_siglip-so400m-patch14-384-HuggingFaceTB_SmolLM2-135M-Instruct-pretrain-clip"
+MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-ss" #-attn-pt"
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
 
-CKPT_PATH=$LLM_VERSION # this could also be the previous stage checkpoint
+# CKPT_PATH=$LLM_VERSION # this could also be the previous stage checkpoint
+# CKPT_PATH='/playpen/xinyu'
 
-NUM_GPUS=1
+NUM_GPUS=4
 NNODES=1
 PORT=29500
 ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port="${PORT}" \
@@ -45,7 +51,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port=
     --version $PROMPT_VERSION \
     --data_path ${DATA_PREFIX}/LLaVA-Instruct-150K/llava_v1_5_mix665k.json \
     --image_folder ${DATA_PREFIX}/LLaVA-Instruct-150K/images \
-    --pretrain_mm_mlp_adapter /playpen/xinyu/checkpoints/projectors/$BASE_RUN_NAME/mm_projector.bin \
+    --pretrain_mm_mlp_adapter ${DATA_PREFIX}/checkpoints/projectors/$BASE_RUN_NAME_U1/mm_projector.bin \
     --mm_tunable_parts "mm_vision_tower,mm_mlp_adapter,mm_language_model" \
     --mm_vision_tower_lr=2e-6 \
     --vision_tower ${VISION_MODEL_VERSION} \
@@ -58,7 +64,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port=
     --num_train_epochs 1 \
     --per_device_train_batch_size $BATCH_PROCESSOR_SIZE \
     --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 1 \
+    --gradient_accumulation_steps 2 \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
     --save_steps 2000 \
@@ -77,6 +83,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port=
     --torch_compile True \
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
-    --run_name $MID_RUN_NAME
+    --run_name $MID_RUN_NAME \
+    --attn_implementation eager
 
 exit 0;

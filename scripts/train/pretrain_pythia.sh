@@ -1,12 +1,20 @@
 export HF_HOME='/playpen/xinyu'
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=0,1,5,7
 
 # LLM_VERSION="EleutherAI/pythia-70m"
-LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
+# LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
+LLM_VERSION='/home/xinyuzh/unites1/pythia_20k/pythia-70m-diff-20k-hf'
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
-VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+# VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
+VISION_MODEL_VERSION="google/siglip-so400m-patch14-384"
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
+DATA_PREFIX='/home/xinyuzh/unites1'
 
+if [[ $VISION_MODEL_VERSION == *"clip"* ]]; then
+    LR=2e-3 
+else
+    LR=1e-3
+fi
 ############### Pretrain ################
 
 PROMPT_VERSION=plain
@@ -16,7 +24,7 @@ echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 
 NUM_GPUS=4
 NNODES=1
-PORT=54321
+PORT=20016
 
 ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NNODES}" --master_port="${PORT}" \
     llava/train/train_mem.py \
@@ -24,8 +32,8 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --deepspeed scripts/zero2.json \
     --model_name_or_path ${LLM_VERSION} \
     --version ${PROMPT_VERSION} \
-    --data_path /playpen/xinyu/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json \
-    --image_folder /playpen/xinyu/LLaVA-Pretrain/images \
+    --data_path ${DATA_PREFIX}/LLaVA-Pretrain/blip_laion_cc_sbu_558k.json \
+    --image_folder ${DATA_PREFIX}/LLaVA-Pretrain/images \
     --vision_tower ${VISION_MODEL_VERSION} \
     --mm_tunable_parts="mm_mlp_adapter" \
     --mm_vision_select_layer -2 \
@@ -41,7 +49,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --evaluation_strategy "no" \
     --save_strategy "no" \
     --save_steps 50000 \
-    --learning_rate 2e-3 \
+    --learning_rate $LR \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
     --lr_scheduler_type "cosine" \

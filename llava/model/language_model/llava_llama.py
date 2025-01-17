@@ -25,11 +25,15 @@ from torch.nn import CrossEntropyLoss
 
 # , LlamaModel, LlamaForCausalLM, GenerationConfig
 # from .modeling_llama import LlamaModel, LlamaForCausalLM
-from transformers import LlamaModel, LlamaForCausalLM
+# from transformers import LlamaModel, LlamaForCausalLM
+from .modelling_llama import MyLlamaModel, MyLlamaForCausalLM
 from transformers.modeling_outputs import CausalLMOutputWithPast
 from transformers.generation.utils import GenerateOutput
 
 from llava.model.llava_arch import LlavaMetaModel, LlavaMetaForCausalLM
+import os
+
+# SAVE_ATTN_PATH = os.environ.get("SAVE_ATTN_PATH", None)
 
 
 class LlavaConfig(LlamaConfig):
@@ -41,18 +45,21 @@ class LlavaConfig(LlamaConfig):
     # rope_scaling: Optional[dict] = {}
 
 
-class LlavaLlamaModel(LlavaMetaModel, LlamaModel):
+class LlavaLlamaModel(LlavaMetaModel, MyLlamaModel):
+# class LlavaLlamaModel(LlavaMetaModel, LlamaModel):
     config_class = LlavaConfig
 
     def __init__(self, config: LlamaConfig):
         super(LlavaLlamaModel, self).__init__(config)
 
 
-class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
+class LlavaLlamaForCausalLM(MyLlamaForCausalLM, LlavaMetaForCausalLM):
+# class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
     config_class = LlavaConfig
 
     def __init__(self, config):
-        LlamaForCausalLM.__init__(self, config)
+        # LlamaForCausalLM.__init__(self, config)
+        MyLlamaForCausalLM.__init__(self, config)
 
         # configure default generation settings
         config.model_type = "llava_llama"
@@ -87,7 +94,8 @@ class LlavaLlamaForCausalLM(LlamaForCausalLM, LlavaMetaForCausalLM):
 
         if inputs_embeds is None:
             (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
-
+        # if SAVE_ATTN_PATH:
+        #     output_attentions=True
         if dpo_forward:
             outputs = self.model(
                 input_ids=input_ids,

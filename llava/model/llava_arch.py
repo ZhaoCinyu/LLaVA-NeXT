@@ -16,7 +16,7 @@
 from abc import ABC, abstractmethod
 
 import math
-import re
+import re, os
 import time
 import torch
 import torch.nn as nn
@@ -30,12 +30,14 @@ from llava.mm_utils import get_anyres_image_grid_shape
 from llava.utils import rank0_print, rank_print
 import random
 
+import warnings
+
+SAVE_ATTN_PATH = os.environ.get("SAVE_ATTN_PATH", None)
 
 class LlavaMetaModel:
 
     def __init__(self, config):
         super(LlavaMetaModel, self).__init__(config)
-
         if hasattr(config, "mm_vision_tower"):
             delay_load = getattr(config, "delay_load", False)
             self.vision_tower = build_vision_tower(config, delay_load=delay_load)
@@ -229,16 +231,16 @@ class LlavaMetaForCausalLM(ABC):
         image_feature = image_feature.flatten(1, 2).flatten(2, 3)
         image_feature = torch.cat((image_feature, self.model.image_newline[:, None, None].expand(*image_feature.shape[:-1], 1).to(image_feature.device)), dim=-1)
         if getattr(self.config, "add_faster_video", False):
-            # import pdb; pdb.set_trace()
+            
             # (3584, 832, 14) -> (3584, 64, 13, 14)
             image_feature = image_feature.view(feature_dim, num_frames,resize_h, -1)
             #  (3584, 64, 13, 14) -> (64, 13, 14, 3584)
             image_feature = image_feature.permute(1, 2, 3, 0).contiguous()
             # (64, 13, 14, 3584) -> (64, 13*14, 3584)
             image_feature = image_feature.flatten(1, 2)
-            # import pdb; pdb.set_trace()
+            
             return image_feature
-        # import pdb; pdb.set_trace()
+        
         image_feature = image_feature.flatten(1, 2).transpose(0, 1)
         return image_feature
 
@@ -257,7 +259,9 @@ class LlavaMetaForCausalLM(ABC):
         if isinstance(modalities, str):
             modalities = [modalities]
 
-        # import pdb; pdb.set_trace()
+        batch_image_indices = [] # track img embedding index in batch
+
+        
         if type(images) is list or images.ndim == 5:
             if type(images) is list:
                 images = [x.unsqueeze(0) if x.ndim == 3 else x for x in images]
@@ -275,6 +279,7 @@ class LlavaMetaForCausalLM(ABC):
                     images_list.append(image.unsqueeze(0))
 
             concat_images = torch.cat([image for image in images_list], dim=0)
+            
             split_sizes = [image.shape[0] for image in images_list]
             encoded_image_features = self.encode_images(concat_images)
             # image_features,all_faster_video_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
@@ -287,6 +292,7 @@ class LlavaMetaForCausalLM(ABC):
                 if idx in video_idx_in_batch:
                     image_features.append(self.get_2dPool(image_feat))
                 else:
+                    
                     image_features.append(image_feat)
             # image_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
             # rank_print(f"Encoded image feats : {[x.shape for x in image_features]}")
@@ -296,6 +302,7 @@ class LlavaMetaForCausalLM(ABC):
             mm_newline_position = getattr(self.config, "mm_newline_position", "one_token")
 
             if mm_patch_merge_type == "flat":
+                
                 image_features = [x.flatten(0, 1) for x in image_features]
 
             elif mm_patch_merge_type.startswith("spatial"):
@@ -306,7 +313,7 @@ class LlavaMetaForCausalLM(ABC):
                     # currently image_feature is a tensor of shape (4, num_patches, hidden_size)
                     # we want to first unflatten it to (2, 2, h, w, hidden_size)
                     # rank0_print("At least we are reaching here")
-                    # import pdb; pdb.set_trace()
+                    
                     if image_idx in video_idx_in_batch:  # video operations
                         # rank0_print("Video")
                         if mm_newline_position == "grid":
@@ -316,13 +323,13 @@ class LlavaMetaForCausalLM(ABC):
                                 faster_video_feature = self.add_token_per_grid(all_faster_video_features[image_idx])
                                 # Add a token for each frame
                                 concat_slow_fater_token = []
-                                # import pdb; pdb.set_trace()
+                                
                                 for _ in range(image_feature.shape[0]):
                                     if _ % self.config.faster_token_stride == 0:
                                         concat_slow_fater_token.append(torch.cat((image_feature[_], self.model.faster_token[None].to(image_feature.device)), dim=0))
                                     else:
                                         concat_slow_fater_token.append(torch.cat((faster_video_feature[_], self.model.faster_token[None].to(image_feature.device)), dim=0))
-                                # import pdb; pdb.set_trace()
+                                
                                 image_feature = torch.cat(concat_slow_fater_token)
 
                                 # print("!!!!!!!!!!!!")
@@ -353,7 +360,7 @@ class LlavaMetaForCausalLM(ABC):
                         image_feature = image_feature[1:]
                         height = width = self.get_vision_tower().num_patches_per_side
                         assert height * width == base_image_feature.shape[0]
-
+                        
                         if "anyres_max" in image_aspect_ratio:
                             matched_anyres_max_num_patches = re.match(r"anyres_max_(\d+)", image_aspect_ratio)
                             if matched_anyres_max_num_patches:
@@ -445,11 +452,14 @@ class LlavaMetaForCausalLM(ABC):
         new_input_embeds = []
         new_labels = []
         cur_image_idx = 0
+        cur_image_indices = []  # Track image positions for this batch item
+        cur_pos = 0 
         # rank_print("Inserting Images embedding")
         for batch_idx, cur_input_ids in enumerate(input_ids):
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
             # rank0_print(num_images)
             if num_images == 0:
+                batch_image_indices.append([])
                 cur_image_features = image_features[cur_image_idx]
                 cur_input_embeds_1 = self.get_model().embed_tokens(cur_input_ids)
                 cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
@@ -472,25 +482,31 @@ class LlavaMetaForCausalLM(ABC):
             cur_new_labels = []
 
             for i in range(num_images + 1):
+                text_chunk = cur_input_embeds_no_im[i]
                 cur_new_input_embeds.append(cur_input_embeds_no_im[i])
                 cur_new_labels.append(cur_labels_noim[i])
+                cur_pos += text_chunk.shape[0]
                 if i < num_images:
                     try:
                         cur_image_features = image_features[cur_image_idx]
                     except IndexError:
                         cur_image_features = image_features[cur_image_idx - 1]
+                    image_length = cur_image_features.shape[0]
+                    cur_image_indices.append((cur_pos, cur_pos + image_length))
+                
                     cur_image_idx += 1
                     cur_new_input_embeds.append(cur_image_features)
                     cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
 
             cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]
 
-            # import pdb; pdb.set_trace()
+            
             cur_new_input_embeds = torch.cat(cur_new_input_embeds)
             cur_new_labels = torch.cat(cur_new_labels)
 
             new_input_embeds.append(cur_new_input_embeds)
             new_labels.append(cur_new_labels)
+            batch_image_indices.append(cur_image_indices)
 
         # Truncate sequences to max length as image embeddings can make the sequence longer
         tokenizer_model_max_length = getattr(self.config, "tokenizer_model_max_length", None)
@@ -502,7 +518,13 @@ class LlavaMetaForCausalLM(ABC):
         # if tokenizer_model_max_length is not None:
         #     new_input_embeds = [x[:4096] if modality != "video" else x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
         #     new_labels = [x[:4096] if modality != "video" else x[:tokenizer_model_max_length] for x, modality in zip(new_labels, modalities)]
-
+        if tokenizer_model_max_length is not None:
+            for batch_idx, indices in enumerate(batch_image_indices):
+                batch_image_indices[batch_idx] = [(start, min(end, tokenizer_model_max_length)) 
+                                                for start, end in indices 
+                                                if start < tokenizer_model_max_length]
+        
+        
         # Combine them
         max_len = max(x.shape[0] for x in new_input_embeds)
         batch_size = len(new_input_embeds)
@@ -512,7 +534,17 @@ class LlavaMetaForCausalLM(ABC):
         attention_mask = torch.zeros((batch_size, max_len), dtype=attention_mask.dtype, device=attention_mask.device)
         position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
         # rank0_print("Prepare pos id")
+        
+        if getattr(self.config, "tokenizer_padding_side", "right") == "left":
+            for batch_idx in range(batch_size):
+                pad_length = max_len - new_input_embeds[batch_idx].shape[0]
+                # Shift indices by pad_length
+                batch_image_indices[batch_idx] = [(start + pad_length, end + pad_length) 
+                                                for start, end in batch_image_indices[batch_idx]]
 
+        self.current_image_indices = batch_image_indices
+        # warnings.warn(f"Current image indices: {self.current_image_indices}")
+        
         for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
             cur_len = cur_new_embed.shape[0]
             if getattr(self.config, "tokenizer_padding_side", "right") == "left":
@@ -550,8 +582,20 @@ class LlavaMetaForCausalLM(ABC):
             right_add = random.randint(left_add, self.config.pos_skipping_range)
             position_ids[:, :split_position] += left_add
             position_ids[:, split_position:] += right_add
-        # import pdb; pdb.set_trace()
+        
         # rank0_print("Finish preparing")
+        # save_path = f'{SAVE_ATTN_PATH}/input.pt'
+
+        # if SAVE_ATTN_PATH:
+        #     inputs = [input_ids,new_input_embeds,image_features]
+        #     if os.path.exists(save_path):
+        #         data = torch.load(save_path)
+        #         data.append(inputs)
+        #         torch.save(data, save_path)
+        #     else:
+        #         data = [inputs]
+        #         torch.save(data, save_path)
+
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):

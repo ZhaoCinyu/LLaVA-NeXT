@@ -1,12 +1,14 @@
 REPORT_TO=${1:-"none"}
 BATCH_PROCESSOR_SIZE=${2:-"16"}
+DATA_PREFIX='/home/xinyuzh/unites1'
+# DATA_PREFIX='/playpen/xinyu'
 
 export HF_HOME='/playpen/xinyu'
-export CUDA_VISIBLE_DEVICES=4,5,6,7
+export CUDA_VISIBLE_DEVICES=1,2,3,4
 
 # LLM_VERSION="EleutherAI/pythia-70m"
 # LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
-LLM_VERSION="HuggingFaceTB/SmolLM2-135M-Instruct"
+LLM_VERSION="${DATA_PREFIX}/checkpoints/sft_smollm_base_v2"
 # LLM_VERSION="HuggingFaceTB/SmolLM2-360M-Instruct"
 # LLM_VERSION="HuggingFaceTB/SmolLM2-1.7B-Instruct"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
@@ -20,8 +22,7 @@ fi
  # for siglip
 # LR=2e-3 # for clip
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
-# DATA_PREFIX='/home/xinyuzh/unites1'
-DATA_PREFIX='/playpen/xinyu'
+
 ############### Pretrain ################
 
 PROMPT_VERSION=plain
