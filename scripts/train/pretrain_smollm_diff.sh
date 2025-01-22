@@ -1,17 +1,18 @@
 REPORT_TO=${1:-"none"}
 BATCH_PROCESSOR_SIZE=${2:-"16"}
-DATA_PREFIX='/home/xinyuzh/unites1'
-# DATA_PREFIX='/playpen/xinyu'
 
 export HF_HOME='/playpen/xinyu'
-export CUDA_VISIBLE_DEVICES=1,2,3,4
+export CUDA_VISIBLE_DEVICES=4,5,6,7
+export HF_TOKEN=''
+
+# DATA_PREFIX='/home/xinyuzh/unites1'
+DATA_PREFIX='/playpen/xinyu'
 
 # LLM_VERSION="EleutherAI/pythia-70m"
 # LLM_VERSION="lomahony/eleuther-pythia70m-hh-sft"
-LLM_VERSION="${DATA_PREFIX}/checkpoints/sft_smollm_base_v2"
+# LLM_VERSION="HuggingFaceTB/SmolLM2-135M-Instruct"
 # LLM_VERSION="HuggingFaceTB/SmolLM2-360M-Instruct"
-# LLM_VERSION="${DATA_PREFIX}/checkpoints/sft_smollm_base_v2"
-LLM_VERSION='/playpen/xinyu/pythia_20k/pythia-70m-20k-hf'
+LLM_VERSION="${DATA_PREFIX}/checkpoints/sft_smollm_diff_v2"
 LLM_VERSION_CLEAN="${LLM_VERSION//\//_}"
 
 # VISION_MODEL_VERSION="openai/clip-vit-large-patch14-336"
@@ -30,7 +31,7 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 PROMPT_VERSION=plain
 
-BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-test-official"
+BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain"
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 
 NUM_GPUS=4
@@ -53,13 +54,13 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --mm_use_im_patch_token False \
     --bf16 True \
     --output_dir /playpen/xinyu/checkpoints/projectors/${BASE_RUN_NAME} \
-    --num_train_epochs 0.12 \
+    --num_train_epochs 1 \
     --per_device_train_batch_size $BATCH_PROCESSOR_SIZE \
     --per_device_eval_batch_size 4 \
     --gradient_accumulation_steps 1 \
     --evaluation_strategy "no" \
     --save_strategy "no" \
-    --save_steps 1000 \
+    --save_steps 50000 \
     --learning_rate $LR \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
@@ -71,6 +72,7 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NN
     --dataloader_num_workers $BATCH_PROCESSOR_SIZE \
     --lazy_preprocess True \
     --report_to $REPORT_TO \
-    --run_name $BASE_RUN_NAME
+    --run_name $BASE_RUN_NAME \
+    --attn_implementation differential
 
 # You can delete the sdpa attn_implementation if you want to use flash attn

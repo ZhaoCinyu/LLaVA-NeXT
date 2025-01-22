@@ -17,13 +17,24 @@ else
     # $BATCH_PROCESSOR_SIZE=4
 fi
 VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
-
+if [[ $VISION_MODEL_VERSION == *"clip"* ]]; then
+    LR=2e-5 
+    # $BATCH_PROCESSOR_SIZE=16
+else
+    LR=1e-5
+    # $BATCH_PROCESSOR_SIZE=4
+fi
 ############### Pretrain ################
 
 PROMPT_VERSION="pythia"
 
+task="textvqa" #"gqa"
 BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-clip" #-attn-pt"
+<<<<<<< HEAD
 MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-textvqa" #-attn-pt"
+=======
+MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-${task}" #-attn-pt"
+>>>>>>> fb67d1d (finalize smollm)
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
 
@@ -31,14 +42,23 @@ CKPT_PATH=$LLM_VERSION # this could also be the previous stage checkpoint
 
 NUM_GPUS=2
 NNODES=1
+<<<<<<< HEAD
 PORT=29512
+=======
+PORT=29510
+>>>>>>> fb67d1d (finalize smollm)
 ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port="${PORT}" \
     llava/train/train_mem.py \
     --deepspeed scripts/zero2.json \
     --model_name_or_path $LLM_VERSION \
     --version $PROMPT_VERSION \
+<<<<<<< HEAD
     --data_path /home/xinyuzh/unites1/LLaVA-Instruct-150K/textvqa.json \
     --image_folder /home/xinyuzh/unites1/LLaVA-Instruct-150K/images \
+=======
+    --data_path /playpen/xinyu/LLaVA-Instruct-150K/${task}.json \
+    --image_folder /playpen/xinyu/LLaVA-Instruct-150K/images \
+>>>>>>> fb67d1d (finalize smollm)
     --pretrain_mm_mlp_adapter /playpen/xinyu/checkpoints/projectors/$BASE_RUN_NAME/mm_projector.bin \
     --mm_tunable_parts "mm_vision_tower,mm_mlp_adapter,mm_language_model" \
     --mm_vision_tower_lr=2e-6 \

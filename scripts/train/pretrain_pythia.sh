@@ -24,7 +24,11 @@ echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 
 NUM_GPUS=4
 NNODES=1
+<<<<<<< HEAD
 PORT=20016
+=======
+PORT=20017
+>>>>>>> fb67d1d (finalize smollm)
 
 ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --nnodes="${NNODES}" --master_port="${PORT}" \
     llava/train/train_mem.py \

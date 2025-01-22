@@ -455,6 +455,7 @@ class LlavaMetaForCausalLM(ABC):
         cur_image_indices = []  # Track image positions for this batch item
         cur_pos = 0 
         # rank_print("Inserting Images embedding")
+        batch_image_token_indices = []
         for batch_idx, cur_input_ids in enumerate(input_ids):
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
             # rank0_print(num_images)
@@ -469,6 +470,7 @@ class LlavaMetaForCausalLM(ABC):
                 continue
 
             image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+            batch_image_token_indices.append(image_token_indices)
             cur_input_ids_noim = []
             cur_labels = labels[batch_idx]
             cur_labels_noim = []
@@ -597,7 +599,6 @@ class LlavaMetaForCausalLM(ABC):
         #         torch.save(data, save_path)
 
         return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
-
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         if model_args.mm_use_im_patch_token:
             tokenizer.add_tokens([DEFAULT_IMAGE_PATCH_TOKEN], special_tokens=True)

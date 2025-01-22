@@ -32,15 +32,25 @@ VISION_MODEL_VERSION_CLEAN="${VISION_MODEL_VERSION//\//_}"
 
 PROMPT_VERSION="smollm"
 
+<<<<<<< HEAD
 BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-clip" #-attn-pt"
 BASE_RUN_NAME_U1="llavanext-google_siglip-so400m-patch14-384-HuggingFaceTB_SmolLM2-135M-Instruct-pretrain-clip"
 MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-finetune-ss" #-attn-pt"
+=======
+BASE_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-test-official" #-attn-pt"
+# BASE_RUN_NAME_U1="llavanext-google_siglip-so400m-patch14-384-_playpen_xinyu_checkpoints_sft_smollm_base_v2-pretrain"
+MID_RUN_NAME="llavanext-${VISION_MODEL_VERSION_CLEAN}-${LLM_VERSION_CLEAN}-pretrain-test-official" #-attn-pt"
+>>>>>>> fb67d1d (finalize smollm)
 echo "BASE_RUN_NAME: ${BASE_RUN_NAME}"
 echo "MID_RUN_NAME: ${MID_RUN_NAME}"
 
 # CKPT_PATH=$LLM_VERSION # this could also be the previous stage checkpoint
 # CKPT_PATH='/playpen/xinyu'
+<<<<<<< HEAD
 
+=======
+CKPT_PATH='/playpen/xinyu/checkpoints/projectors/llavanext-google_siglip-so400m-patch14-384-HuggingFaceTB_SmolLM2-135M-Instruct-pretrain-test-official'
+>>>>>>> fb67d1d (finalize smollm)
 NUM_GPUS=4
 NNODES=1
 PORT=29500
@@ -51,7 +61,11 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port=
     --version $PROMPT_VERSION \
     --data_path ${DATA_PREFIX}/LLaVA-Instruct-150K/llava_v1_5_mix665k.json \
     --image_folder ${DATA_PREFIX}/LLaVA-Instruct-150K/images \
+<<<<<<< HEAD
     --pretrain_mm_mlp_adapter ${DATA_PREFIX}/checkpoints/projectors/$BASE_RUN_NAME_U1/mm_projector.bin \
+=======
+    --pretrain_mm_mlp_adapter ${CKPT_PATH}/mm_projector.bin \
+>>>>>>> fb67d1d (finalize smollm)
     --mm_tunable_parts "mm_vision_tower,mm_mlp_adapter,mm_language_model" \
     --mm_vision_tower_lr=2e-6 \
     --vision_tower ${VISION_MODEL_VERSION} \
@@ -84,6 +98,10 @@ ACCELERATE_CPU_AFFINITY=1 torchrun --nproc_per_node="${NUM_GPUS}" --master_port=
     --torch_compile_backend "inductor" \
     --dataloader_drop_last True \
     --run_name $MID_RUN_NAME \
+<<<<<<< HEAD
     --attn_implementation eager
+=======
+    # --attn_implementation differential
+>>>>>>> fb67d1d (finalize smollm)
 
 exit 0;

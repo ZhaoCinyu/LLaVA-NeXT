@@ -7,6 +7,7 @@ from PIL import Image
 import requests
 import copy
 import torch
+<<<<<<< HEAD
 import os
 
 os.environ["HF_HOME"] = "/playpen/xinyu"
@@ -18,12 +19,24 @@ pretrained = "/home/xinyuzh/unites1/checkpoints/llavanext-google_siglip-so400m-p
 model_name = "llava_llama"
 # pretrained = "liuhaotian--llava-v1.5-7b"
 # model_name = "llava-v1.5"
+=======
+
+# pretrained = '/playpen/xinyu/checkpoints/llavanext-google_siglip-so400m-patch14-384-_playpen_xinyu_checkpoints_sft_smollm_diff_v2-finetune'
+# pretrained = '/playpen/xinyu/checkpoints/llavanext-google_siglip-so400m-patch14-384-_playpen_xinyu_checkpoints_sft_smollm_diff_v2-pretrain-test-official'
+pretrained = "/playpen/xinyu/checkpoints/llavanext-google_siglip-so400m-patch14-384-_playpen_xinyu_pythia_20k_pythia-70m-20k-hf-finetune-gqa"
+# model_name = "llava_llama"
+model_name = "llava_pythia"
+>>>>>>> fb67d1d (finalize smollm)
 device = "cuda"
 device_map = "auto"
 tokenizer, model, image_processor, max_length = load_pretrained_model(
     pretrained, None, model_name, device_map=device_map,
+<<<<<<< HEAD
     attn_implementation='eager')
     # attn_implementation='flash_attention_2') 
+=======
+    attn_implementation='flash_attention_2') 
+>>>>>>> fb67d1d (finalize smollm)
     # attn_implementation='differential') # Add any other thing you want to pass in llava_model_args
 
 model.eval()
@@ -34,8 +47,12 @@ image = Image.open(requests.get(url, stream=True).raw)
 image_tensor = process_images([image], image_processor, model.config)
 image_tensor = [_image.to(dtype=torch.float16, device=device) for _image in image_tensor]
 
+<<<<<<< HEAD
 # conv_template = "vicuna_v1" # Make sure you use correct chat template for different models
 conv_template = "smollm"
+=======
+conv_template = "llava_llama_3" # Make sure you use correct chat template for different models
+>>>>>>> fb67d1d (finalize smollm)
 question = DEFAULT_IMAGE_TOKEN + "\nWhat is shown in this image?"
 conv = copy.deepcopy(conv_templates[conv_template])
 conv.append_message(conv.roles[0], question)

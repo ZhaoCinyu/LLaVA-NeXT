@@ -795,7 +795,6 @@ def preprocess_v1(sources, tokenizer: transformers.PreTrainedTokenizer, has_imag
         target[cur_len:] = IGNORE_INDEX
         print("target final" ,target)
         # print("input_ids", input_ids)
-        exit(-1)
         if cur_len < tokenizer.model_max_length:
             if cur_len != total_len:
                 target[:] = IGNORE_INDEX
@@ -897,7 +896,6 @@ def preprocess_smollm(
         system_message: str = "You are a helpful assistant.") -> Dict:
     # conv = conversation_lib.default_conversation.copy()
     # roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
-
     roles = {"human": "user", "gpt": "assistant"}
     tokenizer = copy.deepcopy(tokenizer)
     
@@ -1111,7 +1109,7 @@ def preprocess_mpt(sources, tokenizer: transformers.PreTrainedTokenizer, has_ima
         target[cur_len:] = IGNORE_INDEX
         print('final t',targets)
         print(f'cur_len {cur_len}, tokenizer.model_max_length {tokenizer.model_max_length}, total_len {total_len}')
-        exit(-1)
+        # exit(-1)
         if cur_len < tokenizer.model_max_length:
             if cur_len != total_len:
                 target[:] = IGNORE_INDEX
