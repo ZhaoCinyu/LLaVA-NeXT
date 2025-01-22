@@ -7,7 +7,7 @@ from torch import nn
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
 from transformers.models.qwen2.modeling_qwen2 import apply_rotary_pos_emb, repeat_kv, rotate_half
-from .augment_index import aug_smollm
+from .augment_index import aug_qwen
 from transformers.utils import logging
 import torch.distributed as dist
 logger = logging.get_logger(__name__)
@@ -23,14 +23,15 @@ def atten_process_eval(attention_map, index=None):
     beta = BETA
     threshod = THRES
     
-    head_indices = aug_smollm[index]
+    head_indices = aug_qwen[index]
     if head_indices == []:
         return attention_map
     
     is_first_fwd = True
 
-    if not os.path.exists(SAVE_ATTN_PATH):
-        os.makedirs(SAVE_ATTN_PATH)
+    if SAVE_ATTN_PATH:
+        if not os.path.exists(SAVE_ATTN_PATH):
+            os.makedirs(SAVE_ATTN_PATH)
     save_path = f'{SAVE_ATTN_PATH}/hallu.pt'
     if os.path.exists(save_path):
         is_first_fwd = False

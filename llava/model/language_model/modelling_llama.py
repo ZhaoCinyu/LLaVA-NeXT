@@ -49,7 +49,7 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repea
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_func, flash_attn_varlen_func
     from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input  # noqa
-
+import pickle
 # This makes `_prepare_4d_causal_attention_mask` a leaf function in the FX graph.
 # It means that the function will not be traced through and simply appear as a node in the graph.
 if is_torch_fx_available():
@@ -63,6 +63,7 @@ LAYER_NUM = int(os.environ.get("LAYER_NUM", 0))
 HEAD_NUM = int(os.environ.get("HEAD_NUM", 0))
 CALIBRATION = int(os.environ.get("CALIBRATION", 0))
 SAVE_ATTN_PATH = os.environ.get("SAVE_ATTN_PATH", None)
+SAVE_STD_PATH = os.environ.get("SAVE_STD_PATH", None)
 
 def _get_unpad_data(attention_mask):
     seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
@@ -274,9 +275,10 @@ class LlamaMLP(nn.Module):
 class LlamaAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
-    def __init__(self, config: LlamaConfig):
+    def __init__(self, config: LlamaConfig, layer_idx):
         super().__init__()
         self.config = config
+        self.layer_idx = layer_idx
         self.hidden_size = config.hidden_size
         self.num_heads = config.num_attention_heads
         self.head_dim = self.hidden_size // self.num_heads
@@ -403,6 +405,23 @@ class LlamaAttention(nn.Module):
     
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+
+        if SAVE_STD_PATH:
+            # import pdb;pdb.set_trace()
+            std = torch.std(attn_weights, dim=-1, unbiased=False)
+            mean_std = torch.mean(std, dim=-1)
+            if os.path.exists(SAVE_STD_PATH):
+                with open(SAVE_STD_PATH, 'rb') as f:
+                    layer_data = pickle.load(f)
+                if str(self.layer_idx) in layer_data:
+                    layer_data[str(self.layer_idx)].append(mean_std.detach().cpu().numpy())
+                else:
+                    layer_data[str(self.layer_idx)] = [mean_std.detach().cpu().numpy()]
+            else:
+                layer_data = {str(self.layer_idx): [mean_std.detach().cpu().numpy()]}
+            with open(SAVE_STD_PATH, 'wb') as f:
+                pickle.dump(layer_data, f)
+
         attn_output = torch.matmul(attn_weights, value_states)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
@@ -616,11 +635,12 @@ class LlamaFlashAttention2(LlamaAttention):
         )
 
 class LlamaDecoderLayer(nn.Module):
-    def __init__(self, config: LlamaConfig):
+    def __init__(self, config: LlamaConfig, layer_idx):
         super().__init__()
         self.hidden_size = config.hidden_size
+        self.layer_idx = layer_idx
         self.self_attn = (
-            LlamaAttention(config=config)
+            LlamaAttention(config=config, layer_idx=self.layer_idx)
             if not getattr(config, "_flash_attn_2_enabled", False)
             else LlamaFlashAttention2(config=config)
         )
@@ -637,6 +657,7 @@ class LlamaDecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         signal: Optional[int] = None,
+        current_image_indices = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -671,6 +692,7 @@ class LlamaDecoderLayer(nn.Module):
             output_attentions=output_attentions,
             use_cache=use_cache,
             signal=signal,
+            current_image_indices=current_image_indices,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -811,7 +833,7 @@ class MyLlamaModel(LlamaPreTrainedModel):
         self.vocab_size = config.vocab_size
 
         self.embed_tokens = nn.Embedding(config.vocab_size, config.hidden_size, self.padding_idx)
-        self.layers = nn.ModuleList([LlamaDecoderLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList([LlamaDecoderLayer(config, idx) for idx in range(config.num_hidden_layers)])
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.gradient_checkpointing = False
@@ -836,6 +858,7 @@ class MyLlamaModel(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        current_image_indices = None
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -928,6 +951,7 @@ class MyLlamaModel(LlamaPreTrainedModel):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     signal = signal,
+                    current_image_indices = current_image_indices
                 )
                 #################END: MODIFICATION################
 
@@ -1044,6 +1068,7 @@ class MyLlamaForCausalLM(LlamaPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            current_image_indices=getattr(self,"current_image_indices",None)
         )
 
         hidden_states = outputs[0]

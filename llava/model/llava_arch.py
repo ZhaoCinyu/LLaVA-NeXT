@@ -542,8 +542,8 @@ class LlavaMetaForCausalLM(ABC):
                 batch_image_indices[batch_idx] = [(start + pad_length, end + pad_length) 
                                                 for start, end in batch_image_indices[batch_idx]]
 
-        self.current_image_indices = batch_image_indices
-        # warnings.warn(f"Current image indices: {self.current_image_indices}")
+        self.current_image_indices = batch_image_indices[0][0]
+        # warnings.warn(f"Current image indices: {self.current_image_indices}, [start, end), current only work for 1 image")
         
         for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
             cur_len = cur_new_embed.shape[0]
@@ -585,7 +585,7 @@ class LlavaMetaForCausalLM(ABC):
         
         # rank0_print("Finish preparing")
         # save_path = f'{SAVE_ATTN_PATH}/input.pt'
-
+        # import pdb;pdb.set_trace()
         # if SAVE_ATTN_PATH:
         #     inputs = [input_ids,new_input_embeds,image_features]
         #     if os.path.exists(save_path):
