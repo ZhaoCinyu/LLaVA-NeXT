@@ -17,15 +17,7 @@ HEAD_NUM = int(os.environ.get("HEAD_NUM", 0))
 BETA = float(os.environ.get("BETA", 0))
 THRES = float(os.environ.get("THRES", 0))
 SAVE_ATTN_PATH = os.environ.get("SAVE_ATTN_PATH", None)
-MODEL_NAME = os.environ.get("MODEL_NAME", 'llava_llama')
-
-if "llama" in MODEL_NAME:
-    aug_index = aug_llava_v15
-elif "smollm" in MODEL_NAME:
-    aug_index = aug_smollm
-else:
-    raise ValueError(f"Model name {MODEL_NAME} not supported")
-logger.warning(f"Using model {MODEL_NAME} aug_index")
+BOOST = float(os.environ.get("BOOST", 0))
 
 def atten_process_eval(attention_map, index=None, current_image_indices=None):
     # layerwise attention eval
@@ -33,7 +25,7 @@ def atten_process_eval(attention_map, index=None, current_image_indices=None):
     beta = BETA
     threshod = THRES
     
-    head_indices = aug_index[index]
+    head_indices = aug_smollm[index]
 
     if head_indices == []:
         return attention_map
@@ -76,30 +68,92 @@ def atten_process_eval(attention_map, index=None, current_image_indices=None):
 
     return attention_map
 
-def atten_process_eval_25(attention_map, index=None, current_image_indices=None):
-    # layerwise attention eval
-    logger.warning_once('i am evaluating calibrated attention 25')
+def atten_process_eval_21(attention_map, index=None, current_image_indices=None):
+    # layerwise attention eval 
+    logger.warning_once('i am evaluating calibrated attention 21')
     beta = BETA
-    threshod = THRES
     
-    head_indices = aug_index[index]
+    head_indices = aug_smollm[index]
 
     if head_indices == []:
         return attention_map
     
     for head_num in head_indices:
         modified_head = attention_map[0][head_num]
+        before_image_indices = torch.arange(1,current_image_indices[0])
+        after_image_indices = torch.arange(current_image_indices[1],modified_head.shape[-1])
+        indices = torch.cat([before_image_indices, after_image_indices], dim=0).unsqueeze(dim=-1)
 
-        device = modified_head.device
-        shape = modified_head.shape[0]
+        copied_attention_map = copy.deepcopy(modified_head.detach())
+        available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
+        modified_head[:, indices] *= beta
+        copied_attention_map[1:, indices] *= 0
+        ratios = copied_attention_map / torch.sum(copied_attention_map,  dim=1, keepdim=True).to(copied_attention_map.dtype)
+        modified_head = modified_head + available_weights * ratios
+        modified_head[0, 0] = 1
 
-        # what token to cut: text tokens
-        # before_image_indices = torch.arange(1,current_image_indices[0])
-        # after_image_indices = torch.arange(current_image_indices[1],modified_head.shape[-1])
-        # indices = torch.cat([before_image_indices, after_image_indices], dim=0).unsqueeze(dim=-1)
-        
-        # what token to cut: global sink tokens
+        attention_map[0][head_num] = modified_head
+
+    return attention_map
+
+def atten_process_eval_23(attention_map, index=None, current_image_indices=None):
+    # layerwise attention eval
+    logger.warning_once('i am evaluating calibrated attention 23')
+    beta = BETA
+    threshod = THRES
+    shape = modified_head.shape[0]
+    device = modified_head.device
+    head_indices = aug_smollm[index]
+
+    if head_indices == []:
+        return attention_map
+    
+    for head_num in head_indices:
+        modified_head = attention_map[0][head_num]
+        # filter the token position with high attn score
         indices = torch.nonzero(torch.where(torch.sum(modified_head, dim=0) / torch.arange(shape,0,-1).to(device) > threshod, 1, 0))
+
+        copied_attention_map = copy.deepcopy(modified_head.detach())
+        available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
+        modified_head[:, indices] *= beta
+        
+        image_mask = torch.zeros_like(copied_attention_map, dtype=torch.bool)
+        if current_image_indices is not None:
+            start_idx, end_idx = current_image_indices
+            image_mask[:, start_idx:end_idx] = True
+
+        copied_attention_map[1:, indices] *= 0
+        copied_attention_map = torch.where(image_mask, copied_attention_map, torch.zeros_like(copied_attention_map))
+        
+        ratios = torch.zeros_like(copied_attention_map)
+        sum_attention = torch.sum(copied_attention_map, dim=1, keepdim=True).to(copied_attention_map.dtype)
+
+        valid_rows = sum_attention.squeeze() != 0
+        ratios[valid_rows] = copied_attention_map[valid_rows] / sum_attention[valid_rows]
+        
+        modified_head = modified_head + available_weights * ratios
+        modified_head[0, 0] = 1
+
+        attention_map[0][head_num] = modified_head
+
+    return attention_map
+
+def atten_process_eval_25(attention_map, index=None, current_image_indices=None):
+    # layerwise attention eval
+    logger.warning_once('i am evaluating calibrated attention 25')
+    beta = BETA
+    threshod = THRES
+    
+    head_indices = aug_smollm[index]
+
+    if head_indices == []:
+        return attention_map
+    
+    for head_num in head_indices:
+        modified_head = attention_map[0][head_num]
+        before_image_indices = torch.arange(1,current_image_indices[0])
+        after_image_indices = torch.arange(current_image_indices[1],modified_head.shape[-1])
+        indices = torch.cat([before_image_indices, after_image_indices], dim=0).unsqueeze(dim=-1)
 
         copied_attention_map = copy.deepcopy(modified_head.detach())
         available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
@@ -126,7 +180,7 @@ def atten_process_eval_25(attention_map, index=None, current_image_indices=None)
             
             # Find high attention tokens within image region using image_threshold
             img_indices = torch.nonzero(torch.where(
-                torch.sum(img_tokens, dim=0) / torch.arange(img_end-img_start, 0, -1).to(device) > THRES,
+                torch.sum(img_tokens, dim=0) / torch.arange(img_end-img_start, 0, -1).to(modified_head.device) > THRES,
                 1, 0
             ))
             
@@ -199,6 +253,133 @@ def atten_process_cal(attention_map, current_image_indices=None):
             torch.save(existing_attn, save_path)
         else:
             torch.save([attn], save_path)
+
+    attention_map[0][HEAD_NUM] = modified_head
+
+    return attention_map
+
+def atten_process_cal_22(attention_map, current_image_indices=None):
+    logger.warning_once('i am calibrating attention')
+    beta = BETA
+    threshod = THRES
+    # attention_map: softmaxed attention score, len=1
+    modified_head = attention_map[0][HEAD_NUM]
+    device = modified_head.device
+    
+    if SAVE_ATTN_PATH:
+        attn = {'before': modified_head.cpu().detach().numpy()}
+    shape = modified_head.shape[0]
+
+    # filter the token position with high attn score
+    indices = torch.nonzero(torch.where(torch.sum(modified_head, dim=0) / torch.arange(shape,0,-1).to(device) > threshod, 1, 0))
+
+    # is it still needed? mllm dont have sink first token
+    # first indices always 8th [30]->'.' 'You are a helpful language and vision assistant. <|im_end|>\n<|im_start|>user\n'
+    indices = indices[1:] 
+    copied_attention_map = copy.deepcopy(modified_head.detach())
+    # available_weights is reduced attention value sum after calibration
+    available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
+    modified_head[:, indices] *= beta
+    copied_attention_map[1:, indices] *= 0
+    
+    # Calculate base ratios from remaining attention distribution
+    base_ratios = copied_attention_map / torch.sum(copied_attention_map, dim=1, keepdim=True).to(copied_attention_map.dtype)
+    
+    # Slightly boost image token ratios if provided
+    if current_image_indices is not None and BOOST:
+        image_boost = torch.ones_like(base_ratios)
+        image_boost[:, current_image_indices[0]:current_image_indices[1]] = BOOST
+        
+        # Apply boost and renormalize
+        boosted_ratios = base_ratios * image_boost
+        ratios = boosted_ratios / torch.sum(boosted_ratios, dim=1, keepdim=True)
+    else:
+        logger.warning_once('i am not boosting image token')
+        ratios = base_ratios
+    modified_head = modified_head + available_weights * ratios
+    modified_head[0, 0] = 1
+
+    if SAVE_ATTN_PATH:
+        attn['after'] = modified_head.cpu().detach().numpy()
+        attn['indices'] = indices.cpu().detach().numpy()
+        save_path = f'{SAVE_ATTN_PATH}/{LAYER_NUM}_{HEAD_NUM}.pt'
+        
+        if os.path.exists(save_path):
+            existing_attn = torch.load(save_path)
+            existing_attn.append(attn)
+            torch.save(existing_attn, save_path)
+        else:
+            torch.save([attn], save_path)
+
+    attention_map[0][HEAD_NUM] = modified_head
+
+    return attention_map
+
+def atten_process_cal_21(attention_map, current_image_indices=None):
+    """
+    2.1 redistribute all text to image token
+    2.2 redistribute text sinks to text+image token (not working)
+    2.3 redistribute text sinks to image token
+    """
+    logger.warning_once('i am calibrating attention')
+    beta = BETA
+    threshod = THRES
+    
+    modified_head = attention_map[0][HEAD_NUM]
+
+    before_image_indices = torch.arange(1,current_image_indices[0])
+    after_image_indices = torch.arange(current_image_indices[1],modified_head.shape[-1])
+    indices = torch.cat([before_image_indices, after_image_indices], dim=0).unsqueeze(dim=-1)
+
+    copied_attention_map = copy.deepcopy(modified_head.detach())
+    available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
+    modified_head[:, indices] *= beta
+    copied_attention_map[1:, indices] *= 0
+    ratios = copied_attention_map / torch.sum(copied_attention_map,  dim=1, keepdim=True).to(copied_attention_map.dtype)
+    modified_head = modified_head + available_weights * ratios
+    modified_head[0, 0] = 1
+
+    attention_map[0][HEAD_NUM] = modified_head
+    return attention_map
+
+def atten_process_cal_23(attention_map, current_image_indices=None):
+    """
+    2.1 redistribute all text to image token
+    2.2 redistribute text sinks to text+image token (not working)
+    2.3 redistribute text sinks to image token
+    """
+    logger.warning_once('i am calibrating attention')
+    beta = BETA
+    threshod = THRES
+    # attention_map: softmaxed attention score, len=1
+    modified_head = attention_map[0][HEAD_NUM]
+    device = modified_head.device
+
+    shape = modified_head.shape[0]
+
+    # filter the token position with high attn score
+    indices = torch.nonzero(torch.where(torch.sum(modified_head, dim=0) / torch.arange(shape,0,-1).to(device) > threshod, 1, 0))
+
+    copied_attention_map = copy.deepcopy(modified_head.detach())
+    available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
+    modified_head[:, indices] *= beta
+
+    image_mask = torch.zeros_like(copied_attention_map, dtype=torch.bool)
+    if current_image_indices is not None:
+        start_idx, end_idx = current_image_indices
+        image_mask[:, start_idx:end_idx] = True
+
+    copied_attention_map[1:, indices] *= 0
+    copied_attention_map = torch.where(image_mask, copied_attention_map, torch.zeros_like(copied_attention_map))
+    
+    ratios = torch.zeros_like(copied_attention_map)
+    sum_attention = torch.sum(copied_attention_map, dim=1, keepdim=True).to(copied_attention_map.dtype)
+
+    valid_rows = sum_attention.squeeze() != 0
+    ratios[valid_rows] = copied_attention_map[valid_rows] / sum_attention[valid_rows]
+    
+    modified_head = modified_head + available_weights * ratios
+    modified_head[0, 0] = 1
 
     attention_map[0][HEAD_NUM] = modified_head
 
@@ -287,6 +468,9 @@ def atten_aug_forward_eval_llama(
         if signal in range(32):
             # attn_weights = atten_process_eval(attn_weights, index=signal, current_image_indices=current_image_indices)
             attn_weights = atten_process_eval_25(attn_weights, index=signal, current_image_indices=current_image_indices)
+            # attn_weights = atten_process_eval_22(attn_weights, index=signal, current_image_indices=current_image_indices)
+            # attn_weights = atten_process_eval_21(attn_weights, index=signal, current_image_indices=current_image_indices)
+            # attn_weights = atten_process_eval_23(attn_weights, index=signal, current_image_indices=current_image_indices)
         ##############END:MODIFICATION##############
         attn_output = torch.matmul(attn_weights, value_states)
 
@@ -391,6 +575,8 @@ def atten_aug_forward_cal_llama(
         ##############BEGIN:MODIFICATION##############
         if signal:
             attn_weights = atten_process_cal(attn_weights, current_image_indices)
+            # attn_weights = atten_process_cal_21(attn_weights, current_image_indices)
+            # attn_weights = atten_process_cal_23(attn_weights, current_image_indices)
         ##############END:MODIFICATION##############
 
         attn_output = torch.matmul(attn_weights, value_states)
