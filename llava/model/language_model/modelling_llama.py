@@ -64,6 +64,7 @@ HEAD_NUM = int(os.environ.get("HEAD_NUM", 0))
 CALIBRATION = int(os.environ.get("CALIBRATION", 0))
 SAVE_ATTN_PATH = os.environ.get("SAVE_ATTN_PATH", None)
 SAVE_STD_PATH = os.environ.get("SAVE_STD_PATH", None)
+FASTV = int(os.environ.get("FASTV", 0))
 
 def _get_unpad_data(attention_mask):
     seqlens_in_batch = attention_mask.sum(dim=-1, dtype=torch.int32)
@@ -346,7 +347,7 @@ class LlamaAttention(nn.Module):
             )
         bsz, q_len, _ = hidden_states.size()
         logger.warning_once('i am in ori llama attention')
-        # import pdb;pdb.set_trace()
+        
         if self.config.pretraining_tp > 1:
             key_value_slicing = (self.num_key_value_heads * self.head_dim) // self.config.pretraining_tp
             query_slices = self.q_proj.weight.split(
@@ -407,7 +408,7 @@ class LlamaAttention(nn.Module):
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
 
         if SAVE_STD_PATH:
-            # import pdb;pdb.set_trace()
+            
             std = torch.std(attn_weights, dim=-1, unbiased=False)
             mean_std = torch.mean(std, dim=-1)
             if os.path.exists(SAVE_STD_PATH):
@@ -658,6 +659,7 @@ class LlamaDecoderLayer(nn.Module):
         use_cache: Optional[bool] = False,
         signal: Optional[int] = None,
         current_image_indices = None,
+        key_image_indices: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -693,6 +695,7 @@ class LlamaDecoderLayer(nn.Module):
             use_cache=use_cache,
             signal=signal,
             current_image_indices=current_image_indices,
+            key_image_indices=key_image_indices,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -837,6 +840,7 @@ class MyLlamaModel(LlamaPreTrainedModel):
         self.norm = LlamaRMSNorm(config.hidden_size, eps=config.rms_norm_eps)
 
         self.gradient_checkpointing = False
+        self.last_attention = None
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -858,7 +862,8 @@ class MyLlamaModel(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        current_image_indices = None
+        current_image_indices = None,
+        key_image_indices: Optional[torch.Tensor] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -942,6 +947,36 @@ class MyLlamaModel(LlamaPreTrainedModel):
                     use_cache,
                 )
             else:
+                if FASTV:
+                    K = 3
+                    ratio = 0.5
+                    if decoder_layer.self_attn.layer_idx == K and seq_length > 1:
+                        logger.warning_once('I am starting fastv')
+                        device = hidden_states.device
+                        image_start, image_end = current_image_indices[0], current_image_indices[1]
+                        image_range = image_end - image_start
+                        image_attention_score = self.last_attention.mean(dim=1)[0][-1][image_start:image_end]  
+                        top_attention_rank_index = image_attention_score.topk(int(image_range * ratio)).indices + image_start
+                        keep_indexs = torch.cat((torch.arange(image_start,device=device), top_attention_rank_index, torch.arange(image_end,seq_length,device=device)))
+                        keep_indexs = keep_indexs.sort().values
+                        hidden_states = hidden_states[:,keep_indexs,:]
+                        current_image_indices = (current_image_indices[0], current_image_indices[0]+top_attention_rank_index.shape[0])
+
+                        if attention_mask is not None:
+                            attention_mask = attention_mask[:,:,:hidden_states.shape[1],:hidden_states.shape[1]]
+                        position_ids = keep_indexs.unsqueeze(0)
+
+                    if decoder_layer.self_attn.layer_idx == K - 1:
+                        temp_layer_outputs = decoder_layer(
+                            hidden_states,
+                            attention_mask=attention_mask,
+                            position_ids=position_ids,
+                            past_key_value=past_key_values,
+                            output_attentions=True,
+                            use_cache=use_cache,
+                        )
+                        self.last_attention = temp_layer_outputs[1]
+
                 ################BEGIN: MODIFICATION###############
                 layer_outputs = decoder_layer(
                     hidden_states,
@@ -951,7 +986,8 @@ class MyLlamaModel(LlamaPreTrainedModel):
                     output_attentions=output_attentions,
                     use_cache=use_cache,
                     signal = signal,
-                    current_image_indices = current_image_indices
+                    current_image_indices = current_image_indices,
+                    key_image_indices = key_image_indices
                 )
                 #################END: MODIFICATION################
 
@@ -1049,7 +1085,7 @@ class MyLlamaForCausalLM(LlamaPreTrainedModel):
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
         "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
         ```"""
-        # import pdb;pdb.set_trace()
+        
         # self.current_image_indices
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1068,7 +1104,8 @@ class MyLlamaForCausalLM(LlamaPreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            current_image_indices=getattr(self,"current_image_indices",None)
+            current_image_indices=getattr(self,"current_image_indices",None),
+            key_image_indices=getattr(self,"key_image_indices",None)
         )
 
         hidden_states = outputs[0]

@@ -90,8 +90,10 @@ class LlavaLlamaForCausalLM(MyLlamaForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         dpo_forward: Optional[bool] = None,
         cache_position=None,
+        key_image_indices: Optional[torch.Tensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
-
+        if key_image_indices!=None:
+            self.key_image_indices=key_image_indices
         if inputs_embeds is None:
             (input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels) = self.prepare_inputs_labels_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities, image_sizes)
         # if SAVE_ATTN_PATH:

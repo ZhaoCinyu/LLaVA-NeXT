@@ -7,7 +7,7 @@ from torch import nn
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
 from transformers.models.llama.modeling_llama import apply_rotary_pos_emb, repeat_kv, rotate_half
-from .augment_index import aug_smollm, aug_llava_v15
+from .augment_index import aug_smollm, aug_llava_v15, aug_llava_v15_13b, aug_llava_llama3
 from transformers.utils import logging
 import torch.distributed as dist
 logger = logging.get_logger(__name__)
@@ -18,16 +18,37 @@ BETA = float(os.environ.get("BETA", 0))
 THRES = float(os.environ.get("THRES", 0))
 SAVE_ATTN_PATH = os.environ.get("SAVE_ATTN_PATH", None)
 MODEL_NAME = os.environ.get("MODEL_NAME", 'llava_llama')
+DATASET = os.environ.get("DATASET", 'scienceqa')
+TO_KEY_IMAGE_TOKEN = int(os.environ.get("TO_KEY_IMAGE_TOKEN", 0))
 
-if "llama" in MODEL_NAME:
-    aug_index = aug_llava_v15
+if "v1.5_7b" in MODEL_NAME:
+    try:
+        aug_index = aug_llava_v15[DATASET]
+    except KeyError:
+        raise ValueError(f"Dataset {DATASET} not supported")
+elif "v1.5_13b" in MODEL_NAME:
+    try:
+        aug_index = aug_llava_v15_13b[DATASET]
+    except KeyError:
+        raise ValueError(f"Dataset {DATASET} not supported")
 elif "smollm" in MODEL_NAME:
-    aug_index = aug_smollm
+    try:
+        aug_index = aug_smollm[DATASET]
+    except KeyError:
+        raise ValueError(f"Dataset {DATASET} not supported")
+elif "llama" in MODEL_NAME:
+    try:
+        aug_index = aug_llava_llama3[DATASET]
+    except KeyError:
+        raise ValueError(f"Dataset {DATASET} not supported")
 else:
-    raise ValueError(f"Model name {MODEL_NAME} not supported")
-logger.warning(f"Using model {MODEL_NAME} aug_index")
+    logger.warning(f"Model name {MODEL_NAME} not supported for act")
+#     raise ValueError(f"Model name {MODEL_NAME} not supported")
 
-def atten_process_eval(attention_map, index=None, current_image_indices=None):
+logger.warning(f"Using model {MODEL_NAME} aug_index {DATASET}")
+
+def atten_process_eval(attention_map, index=None, current_image_indices=None,
+                       key_image_indices: Optional[torch.Tensor] = None,):
     # layerwise attention eval
     logger.warning_once('i am evaluating calibrated attention')
     beta = BETA
@@ -56,7 +77,6 @@ def atten_process_eval(attention_map, index=None, current_image_indices=None):
 
         shape = modified_head.shape[0]
         indices = torch.nonzero(torch.where(torch.sum(modified_head, dim=0) / torch.arange(shape,0,-1).to(device) > threshod, 1, 0))
-        
         indices = indices[1:]
         copied_attention_map = copy.deepcopy(modified_head.detach())
         available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
@@ -76,9 +96,9 @@ def atten_process_eval(attention_map, index=None, current_image_indices=None):
 
     return attention_map
 
-def atten_process_eval_25(attention_map, index=None, current_image_indices=None):
+def atten_process_eval_25(attention_map, index=None, current_image_indices=None,
+                          key_image_indices: Optional[torch.Tensor] = None,):
     # layerwise attention eval
-    logger.warning_once('i am evaluating calibrated attention 25')
     beta = BETA
     threshod = THRES
     
@@ -92,65 +112,56 @@ def atten_process_eval_25(attention_map, index=None, current_image_indices=None)
 
         device = modified_head.device
         shape = modified_head.shape[0]
-
+        # import pdb; pdb.set_trace()
         # what token to cut: text tokens
         # before_image_indices = torch.arange(1,current_image_indices[0])
         # after_image_indices = torch.arange(current_image_indices[1],modified_head.shape[-1])
         # indices = torch.cat([before_image_indices, after_image_indices], dim=0).unsqueeze(dim=-1)
         
         # what token to cut: global sink tokens
+        # import pdb;pdb.set_trace()
         indices = torch.nonzero(torch.where(torch.sum(modified_head, dim=0) / torch.arange(shape,0,-1).to(device) > threshod, 1, 0))
-
+        
+        indices = indices[1:]
         copied_attention_map = copy.deepcopy(modified_head.detach())
         available_weights = modified_head[:, indices].sum(dim=1) * (1-beta)
-        
-        image_mask = torch.zeros_like(copied_attention_map, dtype=torch.bool)
-        if current_image_indices is not None:
-            start_idx, end_idx = current_image_indices
-            image_mask[:, start_idx:end_idx] = True
-
+        modified_head[:, indices] *= beta
         copied_attention_map[1:, indices] *= 0
-        copied_attention_map = torch.where(image_mask, copied_attention_map, torch.zeros_like(copied_attention_map))
-        
-        ratios = torch.zeros_like(copied_attention_map)
-        sum_attention = torch.sum(copied_attention_map, dim=1, keepdim=True).to(copied_attention_map.dtype)
-
-        valid_rows = sum_attention.squeeze() != 0
-        ratios[valid_rows] = copied_attention_map[valid_rows] / sum_attention[valid_rows]
-        
+        ratios = copied_attention_map / torch.sum(copied_attention_map,  dim=1, keepdim=True).to(copied_attention_map.dtype)
         modified_head = modified_head + available_weights * ratios
 
         if current_image_indices is not None:
             img_start, img_end = current_image_indices
-            img_tokens = modified_head[:, img_start:img_end]
-            
+            img_tokens = modified_head[img_start:img_end, img_start:img_end]
+                        
             # Find high attention tokens within image region using image_threshold
-            img_indices = torch.nonzero(torch.where(
-                torch.sum(img_tokens, dim=0) / torch.arange(img_end-img_start, 0, -1).to(device) > THRES,
-                1, 0
-            ))
-            
+            # import pdb; pdb.set_trace()
+            # if TO_KEY_IMAGE_TOKEN and key_image_indices!=None:
+            if TO_KEY_IMAGE_TOKEN and key_image_indices!='no key image indices':
+                logger.warning_once('i am evaluating calibrated attention 26')
+                all_indices = torch.arange(img_tokens.shape[1], device=device)
+                img_indices = all_indices[~torch.isin(all_indices, key_image_indices)].unsqueeze(-1)
+            else:
+                # or skip
+                # img_indices = []
+
+                # or 2nd ACT
+                # logger.warning_once('i am evaluating calibrated attention 25')
+                img_indices = torch.nonzero(torch.where(torch.sum(img_tokens, dim=0) / torch.arange(img_end-img_start, 0, -1).to(device) > THRES,1, 0))
             if len(img_indices) > 0:
+                # if key_image_indices=='no key image indices':
+                #     import pdb; pdb.set_trace()
                 # Create a copy for image token attention redistribution
                 img_copied_attention = copy.deepcopy(img_tokens.detach())
-                
-                # Calculate available weights for redistribution within image region
                 img_available_weights = img_tokens[:, img_indices].sum(dim=1) * (1-BETA)
                 
-                # Apply image_beta to high attention tokens
                 img_tokens[:, img_indices] *= BETA
-                
-                # Zero out high attention positions in copied map
-                img_copied_attention[1:, img_indices] *= 0
-                
-                # Calculate redistribution ratios for image region
-                img_ratios = img_copied_attention / torch.sum(img_copied_attention, dim=1, keepdim=True).to(img_copied_attention.dtype)
-                
-                # Redistribute attention within image region
+                img_copied_attention[:, img_indices] *= 0
+                # img_ratios = img_copied_attention / torch.sum(img_copied_attention, dim=1, keepdim=True).to(img_copied_attention.dtype) # when nan happens
+                img_ratios = img_copied_attention / (torch.sum(img_copied_attention, dim=1, keepdim=True).to(img_copied_attention.dtype) + 1e-8) 
                 img_tokens = img_tokens + img_available_weights * img_ratios
-                
-                # Update the image region in modified_head
-                modified_head[:, img_start:img_end] = img_tokens
+                modified_head[img_start:img_end, img_start:img_end] = img_tokens
+                modified_head = modified_head / (torch.sum(modified_head, dim=-1, keepdim=True)) # + 1e-8)
         
         modified_head[0, 0] = 1
 
@@ -214,6 +225,7 @@ def atten_aug_forward_eval_llama(
         use_cache: bool = False,
         signal: int = None,
         current_image_indices = None,
+        key_image_indices: Optional[torch.Tensor] = None,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
         if "padding_mask" in kwargs:
@@ -281,13 +293,15 @@ def atten_aug_forward_eval_llama(
             attn_weights = attn_weights + attention_mask
 
         # upcast attention to fp32
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32) #.to(query_states.dtype)
 
         ##############BEGIN:MODIFICATION##############
         if signal in range(32):
             # attn_weights = atten_process_eval(attn_weights, index=signal, current_image_indices=current_image_indices)
-            attn_weights = atten_process_eval_25(attn_weights, index=signal, current_image_indices=current_image_indices)
+            attn_weights = atten_process_eval_25(attn_weights, index=signal, current_image_indices=current_image_indices,
+                                                 key_image_indices=key_image_indices)
         ##############END:MODIFICATION##############
+        attn_weights = attn_weights.to(query_states.dtype)
         attn_output = torch.matmul(attn_weights, value_states)
 
         if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):

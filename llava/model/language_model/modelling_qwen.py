@@ -19,7 +19,7 @@
 # limitations under the License.
 """ PyTorch LLaMA model."""
 import math
-import os
+import os, pickle
 import warnings
 from typing import List, Optional, Tuple, Union
 
@@ -63,7 +63,8 @@ LAYER_NUM = int(os.environ.get("LAYER_NUM", 0))
 HEAD_NUM = int(os.environ.get("HEAD_NUM", 0))
 CALIBRATION = int(os.environ.get("CALIBRATION", 0))
 SAVE_ATTN_PATH = os.environ.get("SAVE_ATTN_PATH", None)
-
+SAVE_STD_PATH = os.environ.get("SAVE_STD_PATH", None)
+FASTV = int(os.environ.get("FASTV", 0))
 
 # Copied from transformers.models.llama.modeling_llama._prepare_4d_causal_attention_mask_with_cache_position
 def _prepare_4d_causal_attention_mask_with_cache_position(
@@ -393,6 +394,22 @@ class Qwen2Attention(nn.Module):
     
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        if SAVE_STD_PATH:
+            # import pdb;pdb.set_trace()
+            std = torch.std(attn_weights, dim=-1, unbiased=False)
+            mean_std = torch.mean(std, dim=-1)
+            if os.path.exists(SAVE_STD_PATH):
+                with open(SAVE_STD_PATH, 'rb') as f:
+                    layer_data = pickle.load(f)
+                if str(self.layer_idx) in layer_data:
+                    layer_data[str(self.layer_idx)].append(mean_std.detach().cpu().numpy())
+                else:
+                    layer_data[str(self.layer_idx)] = [mean_std.detach().cpu().numpy()]
+            else:
+                layer_data = {str(self.layer_idx): [mean_std.detach().cpu().numpy()]}
+            with open(SAVE_STD_PATH, 'wb') as f:
+                pickle.dump(layer_data, f)
+
         attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
         attn_output = torch.matmul(attn_weights, value_states)
 
@@ -432,6 +449,7 @@ class Qwen2DecoderLayer(nn.Module):
         output_attentions: Optional[bool] = False,
         use_cache: Optional[bool] = False,
         signal: Optional[int] = None,
+        current_image_indices = None,
         **kwargs,
     ) -> Tuple[torch.FloatTensor, Optional[Tuple[torch.FloatTensor, torch.FloatTensor]]]:
         """
@@ -466,6 +484,7 @@ class Qwen2DecoderLayer(nn.Module):
             output_attentions=output_attentions,
             use_cache=use_cache,
             signal=signal,
+            current_image_indices=current_image_indices,
             **kwargs,
         )
         hidden_states = residual + hidden_states
@@ -645,6 +664,7 @@ class MyQwen2Model(Qwen2PreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
+        current_image_indices = None
     ) -> Union[Tuple, BaseModelOutputWithPast]:
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -725,6 +745,7 @@ class MyQwen2Model(Qwen2PreTrainedModel):
                 output_attentions=output_attentions,
                 use_cache=use_cache,
                 signal = signal,
+                current_image_indices = current_image_indices
             )
             #################END: MODIFICATION################
 
@@ -842,6 +863,7 @@ class MyQwen2ForCausalLM(Qwen2PreTrainedModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
+            current_image_indices=getattr(self,"current_image_indices",None)
         )
 
         hidden_states = outputs[0]
