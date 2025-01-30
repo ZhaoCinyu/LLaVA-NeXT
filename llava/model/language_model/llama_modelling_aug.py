@@ -45,7 +45,7 @@ else:
     logger.warning(f"Model name {MODEL_NAME} not supported for act")
 #     raise ValueError(f"Model name {MODEL_NAME} not supported")
 
-logger.warning(f"Using model {MODEL_NAME} aug_index {DATASET}")
+logger.warning(f"Using model {MODEL_NAME} aug_index {DATASET} BETA {BETA}")
 
 def atten_process_eval(attention_map, index=None, current_image_indices=None,
                        key_image_indices: Optional[torch.Tensor] = None,):
@@ -109,7 +109,7 @@ def atten_process_eval_25(attention_map, index=None, current_image_indices=None,
     
     for head_num in head_indices:
         modified_head = attention_map[0][head_num]
-
+        # import pdb;pdb.set_trace()
         device = modified_head.device
         shape = modified_head.shape[0]
         # import pdb; pdb.set_trace()
@@ -130,6 +130,7 @@ def atten_process_eval_25(attention_map, index=None, current_image_indices=None,
         ratios = copied_attention_map / torch.sum(copied_attention_map,  dim=1, keepdim=True).to(copied_attention_map.dtype)
         modified_head = modified_head + available_weights * ratios
 
+        # import pdb;pdb.set_trace()
         if current_image_indices is not None:
             img_start, img_end = current_image_indices
             img_tokens = modified_head[img_start:img_end, img_start:img_end]
@@ -140,6 +141,7 @@ def atten_process_eval_25(attention_map, index=None, current_image_indices=None,
             if TO_KEY_IMAGE_TOKEN and key_image_indices!='no key image indices':
                 logger.warning_once('i am evaluating calibrated attention 26')
                 all_indices = torch.arange(img_tokens.shape[1], device=device)
+                # import pdb; pdb.set_trace()
                 img_indices = all_indices[~torch.isin(all_indices, key_image_indices)].unsqueeze(-1)
             else:
                 # or skip
@@ -161,8 +163,8 @@ def atten_process_eval_25(attention_map, index=None, current_image_indices=None,
                 img_ratios = img_copied_attention / (torch.sum(img_copied_attention, dim=1, keepdim=True).to(img_copied_attention.dtype) + 1e-8) 
                 img_tokens = img_tokens + img_available_weights * img_ratios
                 modified_head[img_start:img_end, img_start:img_end] = img_tokens
-                modified_head = modified_head / (torch.sum(modified_head, dim=-1, keepdim=True)) # + 1e-8)
-        
+                # modified_head = modified_head / (torch.sum(modified_head, dim=-1, keepdim=True)) # + 1e-8)
+                # import pdb;pdb.set_trace()
         modified_head[0, 0] = 1
 
         attention_map[0][head_num] = modified_head
@@ -296,7 +298,7 @@ def atten_aug_forward_eval_llama(
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32) #.to(query_states.dtype)
 
         ##############BEGIN:MODIFICATION##############
-        if signal in range(32):
+        if signal in range(40):
             # attn_weights = atten_process_eval(attn_weights, index=signal, current_image_indices=current_image_indices)
             attn_weights = atten_process_eval_25(attn_weights, index=signal, current_image_indices=current_image_indices,
                                                  key_image_indices=key_image_indices)
