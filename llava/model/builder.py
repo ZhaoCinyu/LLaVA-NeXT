@@ -206,7 +206,6 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                 from .language_model.modelling_llama import LlamaAttention
                 from .language_model.llama_modelling_aug import atten_aug_forward_cal_llama, atten_aug_forward_eval_llama
 
-                assert not (CALIBRATION and EVALUATION)
                 if CALIBRATION:
                     LlamaAttention.forward = atten_aug_forward_cal_llama
                 if EVALUATION:
@@ -266,13 +265,21 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
                             llava_cfg.delay_load = True  # a workaround for correctly loading v1.5 models
                     else:
                         llava_cfg = customized_config
+                    from .language_model.modelling_llama import LlamaAttention
+                    from .language_model.llama_modelling_aug import atten_aug_forward_cal_llama, atten_aug_forward_eval_llama
 
+                    if CALIBRATION:
+                        LlamaAttention.forward = atten_aug_forward_cal_llama
+                    if EVALUATION:
+                        LlamaAttention.forward = atten_aug_forward_eval_llama
                     if overwrite_config is not None:
                         rank0_print(f"Overwriting config with {overwrite_config}")
                         for k, v in overwrite_config.items():
                             setattr(llava_cfg, k, v)
                     model = LlavaLlamaForCausalLM.from_pretrained(model_path, low_cpu_mem_usage=True, attn_implementation=attn_implementation, config=llava_cfg, **kwargs)
-                except:
+                except Exception as e:
+                    print(e)
+                    exit(-1)
                     raise ValueError(f"Model {model_name} not supported")
             
     else:
